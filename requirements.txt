@@ -1,5 +1,7 @@
 fastapi
 uvicorn
 python-multipart
-crewai
-langchain-google-genai
+crewai==0.28.8
+langchain-google-genai==1.0.1
+pillow
+pydantic<2.0.0
