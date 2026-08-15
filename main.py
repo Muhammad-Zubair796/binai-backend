@@ -8,6 +8,11 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # Initialize FastAPI app
 app = FastAPI(title="binAI Backend")
 
+# --- FIX: Added Health Check for Render ---
+@app.get("/")
+async def health_check():
+    return {"status": "alive", "message": "binAI Backend is running!"}
+
 # Initialize the LLM
 # Ensure GOOGLE_API_KEY is set in Render Environment Variables
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=os.getenv("GOOGLE_API_KEY"))
@@ -60,7 +65,6 @@ async def analyze_scene(image: UploadFile = File(...)):
         raw_image = PIL.Image.open(temp_image_path)
 
         # 2. Initial Vision Extraction (The "Eyes" of the app)
-        # We do this first because standard agents need text input
         vision_prompt = "Describe this image in extreme detail for a blind person. List all text, medicine names, expiry dates, and any physical obstacles like stairs or sharp objects."
         vision_report = llm.invoke([vision_prompt, raw_image]).content
 
