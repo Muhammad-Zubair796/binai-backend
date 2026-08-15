@@ -4,11 +4,8 @@ import PIL.Image
 import google.generativeai as genai
 from fastapi import FastAPI, UploadFile, File
 
-# Initialize FastAPI app
 app = FastAPI(title="binAI Backend Fast")
 
-# Configure Gemini directly (Lightning Fast)
-# Ensure GOOGLE_API_KEY is set in Render Environment Variables
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -19,14 +16,14 @@ async def health_check():
 @app.post("/analyze-scene")
 async def analyze_scene(image: UploadFile = File(...)):
     try:
-        # 1. Save Image temporarily
+        print(f"1. Received image: {image.filename}")
         temp_image_path = f"temp_{image.filename}"
         with open(temp_image_path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
         
         raw_image = PIL.Image.open(temp_image_path)
+        print("2. Image loaded successfully. Sending to Gemini...")
 
-        # 2. Single, powerful prompt (Replaces the 4 agents)
         prompt = """
         You are an AI assistant acting as the eyes for a visually impaired person. 
         Look at this image and provide a short, friendly, and clear spoken script (maximum 3 to 4 sentences).
@@ -38,17 +35,16 @@ async def analyze_scene(image: UploadFile = File(...)):
         4. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud by a Text-to-Speech engine.
         """
 
-        # 3. Call Gemini directly
         response = model.generate_content([prompt, raw_image])
+        print("3. Gemini response received!")
 
-        # Clean up
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
 
-        # Return the text immediately
         return {"status": "success", "script": response.text.strip()}
 
     except Exception as e:
+        print(f"ERROR: {str(e)}")
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
         return {"status": "error", "message": str(e)}
