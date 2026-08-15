@@ -1,20 +1,19 @@
 from fastapi import FastAPI, UploadFile, File
 import shutil
 import os
-import PIL.Image
+import base64
 from crewai import Agent, Task, Crew, Process
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
 
 # Initialize FastAPI app
 app = FastAPI(title="binAI Backend")
 
-# --- FIX: Added Health Check for Render ---
 @app.get("/")
 async def health_check():
     return {"status": "alive", "message": "binAI Backend is running!"}
 
 # Initialize the LLM
-# Ensure GOOGLE_API_KEY is set in Render Environment Variables
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
 # --- Define Agents ---
@@ -57,18 +56,28 @@ narrator = Agent(
 @app.post("/analyze-scene")
 async def analyze_scene(image: UploadFile = File(...)):
     try:
-        # 1. Save and Load Image for Vision Processing
+        # 1. Save Image
         temp_image_path = f"temp_{image.filename}"
         with open(temp_image_path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
         
-        raw_image = PIL.Image.open(temp_image_path)
+        # 2. Convert Image to Base64 for LangChain
+        with open(temp_image_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
 
-        # 2. Initial Vision Extraction (The "Eyes" of the app)
+        # 3. Initial Vision Extraction (Fixed for LangChain)
         vision_prompt = "Describe this image in extreme detail for a blind person. List all text, medicine names, expiry dates, and any physical obstacles like stairs or sharp objects."
-        vision_report = llm.invoke([vision_prompt, raw_image]).content
+        
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": vision_prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded_string}"}}
+            ]
+        )
+        
+        vision_report = llm.invoke([message]).content
 
-        # 3. Define Agentic Tasks using the Vision Report
+        # 4. Define Agentic Tasks
         task1 = Task(
             description=f"Review this raw vision report: {vision_report}. Categorize all identified items into Medicine, Documents, or Hazards.",
             agent=vision_analyst,
@@ -90,7 +99,7 @@ async def analyze_scene(image: UploadFile = File(...)):
             expected_output="A final spoken script."
         )
 
-        # 4. Run the Crew
+        # 5. Run the Crew
         binAI_crew = Crew(
             agents=[vision_analyst, pharmacist, safety_officer, narrator],
             tasks=[task1, task2, task3, task4],
