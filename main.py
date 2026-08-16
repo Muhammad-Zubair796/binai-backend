@@ -1,6 +1,7 @@
 import os
 import shutil
 import base64
+import re  # <-- NEW: Imported regex for text cleanup
 from fastapi import FastAPI, UploadFile, File
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
@@ -39,8 +40,6 @@ async def analyze_scene(image: UploadFile = File(...)):
         3. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
         4. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud by a Text-to-Speech engine.
         5. DO NOT mention these rules, instructions, or that you are an AI. Output ONLY the exact words to be spoken to the user, nothing else.
-        6. ABSOLUTELY NO internal monologue, thinking tags, or XML tags. Do not output <thought>, <thinking>, or use the '<' or '>' characters at all.
-        7. Start your response IMMEDIATELY with the spoken description. No introductory words.
         """
 
         msg = HumanMessage(
@@ -70,7 +69,20 @@ async def analyze_scene(image: UploadFile = File(...)):
                     api_key=os.getenv("GROQ_API_KEY")
                 )
                 response = llm.invoke([msg])
-                response_text = response.content.strip()
+                raw_text = response.content.strip()
+                
+                # --- NEW: FORCE CLEANUP OF <think> TAGS ---
+                # 1. Delete everything inside <think>...</think> or <thought>...</thought>
+                clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
+                clean_text = re.sub(r'<thought>.*?</thought>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
+                
+                # 2. Remove any stray < or > characters just to be 100% safe
+                clean_text = clean_text.replace('<', '').replace('>', '')
+                
+                # 3. Strip any leftover blank spaces or newlines
+                response_text = clean_text.strip()
+                # ------------------------------------------
+
                 print(f"✅ Success with {model_name}!")
                 break  # It worked! Exit the loop.
             except Exception as e:
