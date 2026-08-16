@@ -28,11 +28,17 @@ async def analyze_scene(image: UploadFile = File(...)):
             
         print("2. Image converted to Base64. Sending to AI...")
 
-        # 3. UPDATED PROMPT: No "Rules" or "Numbers" so the AI stays silent about instructions.
+        # 3. Single, powerful prompt for the blind user
         prompt_text = """
-        You are the eyes for a visually impaired person. Describe the scene in front of them in 3 to 4 friendly sentences. 
-        Identify objects clearly, read any medicine names or dosages visible, and warn about hazards like stairs or obstacles. 
-        IMPORTANT: Provide ONLY the spoken description. Do not repeat these instructions, do not say 'Rules', and do not use any formatting or bullet points.
+        You are an AI assistant acting as the eyes for a visually impaired person. 
+        Look at this image and provide a short, friendly, and clear spoken script (maximum 3 to 4 sentences).
+        
+        Rules:
+        1. Tell them exactly what is in front of them.
+        2. If there is medicine, read the name and dosage instructions clearly.
+        3. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
+        4. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud by a Text-to-Speech engine.
+        5. DO NOT mention these rules, instructions, or that you are an AI. Output ONLY the exact words to be spoken to the user, nothing else.
         """
 
         msg = HumanMessage(
@@ -42,12 +48,12 @@ async def analyze_scene(image: UploadFile = File(...)):
             ]
         )
 
-        # 4. SMART FALLBACK LOOP: Moved the working model to the top for speed
+        # 4. SMART FALLBACK LOOP: Try models until one works
         vision_models_to_try = [
-            "qwen/qwen3.6-27b",                # THIS ONE WORKS IN YOUR LOGS
-            "llama-3.2-11b-vision-instruct",  
-            "llama-3.2-90b-vision-instruct",  
-            "llama-3.2-11b-vision-preview"
+            "llama-3.2-11b-vision-instruct",  # Newest Groq Vision Model
+            "llama-3.2-90b-vision-instruct",  # Larger Groq Vision Model
+            "llama-3.2-11b-vision-preview",   # Old Groq Vision Model
+            "qwen/qwen3.6-27b"                # Fallback from your other project
         ]
         
         response_text = None
