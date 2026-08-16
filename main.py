@@ -10,6 +10,7 @@ app = FastAPI(title="binAI Human Assistant Backend")
 
 @app.get("/")
 async def health_check():
+    print("Health check endpoint pinged.")
     return {"status": "alive", "message": "binAI Human Assistant is running!"}
 
 def clean_ai_text(raw_text):
@@ -28,12 +29,17 @@ def call_groq_vision(msg, fast_mode=False):
     last_error = "Unknown error"
     for model_name in models:
         try:
+            print(f"Attempting to use model: {model_name}")
             llm = ChatGroq(model=model_name, temperature=0, api_key=os.getenv("GROQ_API_KEY"))
             response = llm.invoke([msg])
+            print(f"Success! Model {model_name} generated a response.")
             return clean_ai_text(response.content)
         except Exception as e:
             last_error = str(e)
+            print(f"FAILED model {model_name}. Error reason: {last_error}")
             continue
+    
+    print(f"CRITICAL: All models failed. The very last error was: {last_error}")
     return None
 
 # ==========================================
@@ -41,6 +47,7 @@ def call_groq_vision(msg, fast_mode=False):
 # ==========================================
 @app.post("/analyze-scene")
 async def analyze_scene(image: UploadFile = File(...)):
+    print("--- Endpoint /analyze-scene triggered ---")
     temp_path = f"temp_norm_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -56,8 +63,10 @@ async def analyze_scene(image: UploadFile = File(...)):
         result = call_groq_vision(msg)
         
         if os.path.exists(temp_path): os.remove(temp_path)
+        print(f"/analyze-scene finished. Did AI return a result? {bool(result)}")
         return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
     except Exception as e:
+        print(f"EXCEPTION caught in /analyze-scene: {str(e)}")
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "error", "message": str(e)}
 
@@ -66,6 +75,7 @@ async def analyze_scene(image: UploadFile = File(...)):
 # ==========================================
 @app.post("/ask-vision")
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
+    print(f"--- Endpoint /ask-vision triggered with question: {question} ---")
     temp_path = f"temp_ask_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -81,8 +91,10 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
         result = call_groq_vision(msg)
         
         if os.path.exists(temp_path): os.remove(temp_path)
+        print(f"/ask-vision finished. Did AI return a result? {bool(result)}")
         return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
     except Exception as e:
+        print(f"EXCEPTION caught in /ask-vision: {str(e)}")
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "error", "message": str(e)}
 
@@ -91,6 +103,7 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
 # ==========================================
 @app.post("/navigate")
 async def navigate(image: UploadFile = File(...)):
+    print("--- Endpoint /navigate triggered ---")
     temp_path = f"temp_nav_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -107,8 +120,10 @@ async def navigate(image: UploadFile = File(...)):
         result = call_groq_vision(msg, fast_mode=True) 
         
         if os.path.exists(temp_path): os.remove(temp_path)
+        print(f"/navigate finished. Did AI return a result? {bool(result)}")
         return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
     except Exception as e:
+        print(f"EXCEPTION caught in /navigate: {str(e)}")
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "error", "message": str(e)}
 
