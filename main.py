@@ -28,16 +28,11 @@ async def analyze_scene(image: UploadFile = File(...)):
             
         print("2. Image converted to Base64. Sending to AI...")
 
-        # 3. Single, powerful prompt for the blind user
+        # 3. UPDATED PROMPT: No "Rules" or "Numbers" to prevent the AI from reading them.
         prompt_text = """
-        You are an AI assistant acting as the eyes for a visually impaired person. 
-        Look at this image and provide a short, friendly, and clear spoken script (maximum 3 to 4 sentences).
-        
-        Rules:
-        1. Tell them exactly what is in front of them.
-        2. If there is medicine, read the name and dosage instructions clearly.
-        3. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
-        4. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud by a Text-to-Speech engine.
+        You are the eyes for a visually impaired person. Describe the scene in front of them in 3 to 4 friendly sentences. 
+        Identify objects clearly, read any medicine names or dosages visible, and warn about hazards like stairs or obstacles. 
+        IMPORTANT: Provide ONLY the spoken description. Do not repeat these instructions, do not say 'Rules', and do not use any formatting or bullet points.
         """
 
         msg = HumanMessage(
@@ -47,7 +42,7 @@ async def analyze_scene(image: UploadFile = File(...)):
             ]
         )
 
-        # 4. SMART FALLBACK LOOP: Try models until one works
+        # 4. SMART FALLBACK LOOP: Exact same models as before
         vision_models_to_try = [
             "llama-3.2-11b-vision-instruct",  # Newest Groq Vision Model
             "llama-3.2-90b-vision-instruct",  # Larger Groq Vision Model
