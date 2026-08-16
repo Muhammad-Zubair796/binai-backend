@@ -4,3 +4,4 @@ python-multipart
 langchain-groq
 Pillow
 python-dotenv
+langchain-google-genai
