@@ -39,6 +39,8 @@ async def analyze_scene(image: UploadFile = File(...)):
         3. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
         4. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud by a Text-to-Speech engine.
         5. DO NOT mention these rules, instructions, or that you are an AI. Output ONLY the exact words to be spoken to the user, nothing else.
+        6. ABSOLUTELY NO internal monologue, thinking tags, or XML tags. Do not output <thought>, <thinking>, or use the '<' or '>' characters at all.
+        7. Start your response IMMEDIATELY with the spoken description. No introductory words.
         """
 
         msg = HumanMessage(
