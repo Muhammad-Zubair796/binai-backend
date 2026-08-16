@@ -4,11 +4,13 @@ import base64
 import re
 from fastapi import FastAPI, UploadFile, File, Form
 from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
 @app.get("/")
+@app.head("/") # Added this so Render's health check stops giving 405 errors
 async def health_check():
     print("Health check endpoint pinged.")
     return {"status": "alive", "message": "binAI Human Assistant is running!"}
@@ -19,27 +21,43 @@ def clean_ai_text(raw_text):
     clean_text = re.sub(r'<thought>.*?</thought>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
     return clean_text.replace('<', '').replace('>', '').strip()
 
-def call_groq_vision(msg, fast_mode=False):
-    """Smart fallback loop to try AI models."""
+def call_vision_model(msg, fast_mode=False):
+    """Smart fallback loop: Tries Groq first, then falls back to Google Gemini."""
+    
+    # 1. Define Groq Models
     if fast_mode:
-        models = ["llama-3.2-11b-vision-instruct", "qwen/qwen3.6-27b"]
+        groq_models = ["llama-3.2-11b-vision-instruct", "qwen/qwen3.6-27b"]
     else:
-        models = ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct", "qwen/qwen3.6-27b"]
+        groq_models = ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct", "qwen/qwen3.6-27b"]
         
     last_error = "Unknown error"
-    for model_name in models:
+    
+    # 2. Try Groq Models First
+    for model_name in groq_models:
         try:
-            print(f"Attempting to use model: {model_name}")
+            print(f"Attempting Groq model: {model_name}")
             llm = ChatGroq(model=model_name, temperature=0, api_key=os.getenv("GROQ_API_KEY"))
             response = llm.invoke([msg])
-            print(f"Success! Model {model_name} generated a response.")
+            print(f"Success! Groq model {model_name} generated a response.")
             return clean_ai_text(response.content)
         except Exception as e:
             last_error = str(e)
-            print(f"FAILED model {model_name}. Error reason: {last_error}")
+            print(f"FAILED Groq model {model_name}. Error: {last_error}")
             continue
-    
-    print(f"CRITICAL: All models failed. The very last error was: {last_error}")
+            
+    # 3. Fallback to Google Gemini if Groq fails
+    try:
+        print("Groq failed. Falling back to Google Gemini (gemini-1.5-flash)...")
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, api_key=os.getenv("GOOGLE_API_KEY"))
+        response = llm.invoke([msg])
+        print("Success! Google Gemini generated a response.")
+        return clean_ai_text(response.content)
+    except Exception as e:
+        last_error = str(e)
+        print(f"FAILED Google Gemini. Error: {last_error}")
+
+    # 4. If everything fails
+    print(f"CRITICAL: ALL models (Groq and Google) failed. Last error: {last_error}")
     return None
 
 # ==========================================
@@ -60,7 +78,7 @@ async def analyze_scene(image: UploadFile = File(...)):
         3. Output ONLY the spoken words."""
 
         msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-        result = call_groq_vision(msg)
+        result = call_vision_model(msg)
         
         if os.path.exists(temp_path): os.remove(temp_path)
         print(f"/analyze-scene finished. Did AI return a result? {bool(result)}")
@@ -88,7 +106,7 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
         3. Output ONLY the spoken words."""
 
         msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-        result = call_groq_vision(msg)
+        result = call_vision_model(msg)
         
         if os.path.exists(temp_path): os.remove(temp_path)
         print(f"/ask-vision finished. Did AI return a result? {bool(result)}")
@@ -117,7 +135,7 @@ async def navigate(image: UploadFile = File(...)):
         4. Output ONLY the spoken words."""
 
         msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-        result = call_groq_vision(msg, fast_mode=True) 
+        result = call_vision_model(msg, fast_mode=True) 
         
         if os.path.exists(temp_path): os.remove(temp_path)
         print(f"/navigate finished. Did AI return a result? {bool(result)}")
