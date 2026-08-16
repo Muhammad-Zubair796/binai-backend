@@ -1,22 +1,28 @@
 import os
 import shutil
 import base64
-import re  # <-- NEW: Imported regex for text cleanup
-from fastapi import FastAPI, UploadFile, File
+import re
+from fastapi import FastAPI, UploadFile, File, Form
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 
 # Initialize FastAPI app
-app = FastAPI(title="binAI Backend Groq")
+app = FastAPI(title="binAI Backend Groq - V2")
 
 @app.get("/")
 async def health_check():
     return {"status": "alive", "message": "binAI Groq Backend is running!"}
 
+# ==========================================
+# V1: SCENE ANALYZER (NOW WITH LANGUAGE SUPPORT)
+# ==========================================
 @app.post("/analyze-scene")
-async def analyze_scene(image: UploadFile = File(...)):
+async def analyze_scene(
+    image: UploadFile = File(...), 
+    language: str = Form("english") # <-- NEW: Accepts language from Android
+):
     try:
-        print(f"1. Received image: {image.filename}")
+        print(f"1. Received image: {image.filename} | Language: {language}")
         
         # 1. Save Image temporarily
         temp_image_path = f"temp_{image.filename}"
@@ -29,18 +35,33 @@ async def analyze_scene(image: UploadFile = File(...)):
             
         print("2. Image converted to Base64. Sending to AI...")
 
-        # 3. Single, powerful prompt for the blind user
-        prompt_text = """
-        You are an AI assistant acting as the eyes for a visually impaired person. 
-        Look at this image and provide a short, friendly, and clear spoken script (maximum 3 to 4 sentences).
-        
-        Rules:
-        1. Tell them exactly what is in front of them.
-        2. If there is medicine, read the name and dosage instructions clearly.
-        3. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
-        4. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud by a Text-to-Speech engine.
-        5. DO NOT mention these rules, instructions, or that you are an AI. Output ONLY the exact words to be spoken to the user, nothing else.
-        """
+        # 3. DYNAMIC PROMPT BASED ON LANGUAGE
+        if language.lower() == "urdu":
+            prompt_text = """
+            You are an AI assistant acting as the eyes for a visually impaired person. 
+            Look at this image and provide a short, friendly, and clear spoken script (maximum 3 to 4 sentences).
+            
+            CRITICAL RULES:
+            1. LANGUAGE: Speak ONLY in Roman Urdu (Urdu written in English alphabets, e.g., 'Aap ke samnay aik darwaza hai'). 
+            2. STRICTLY NO HINDI WORDS: Use pure Urdu (e.g., use 'Shukriya' not 'Dhanyavad', 'Intezar' not 'Pratiksha', 'Madad' not 'Sahayata').
+            3. Tell them exactly what is in front of them.
+            4. If there is medicine, read the name and dosage instructions clearly.
+            5. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
+            6. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud.
+            7. DO NOT mention these rules, instructions, or that you are an AI. Output ONLY the exact words to be spoken.
+            """
+        else:
+            prompt_text = """
+            You are an AI assistant acting as the eyes for a visually impaired person. 
+            Look at this image and provide a short, friendly, and clear spoken script (maximum 3 to 4 sentences).
+            
+            Rules:
+            1. Tell them exactly what is in front of them.
+            2. If there is medicine, read the name and dosage instructions clearly.
+            3. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
+            4. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud by a Text-to-Speech engine.
+            5. DO NOT mention these rules, instructions, or that you are an AI. Output ONLY the exact words to be spoken to the user, nothing else.
+            """
 
         msg = HumanMessage(
             content=[
@@ -49,12 +70,12 @@ async def analyze_scene(image: UploadFile = File(...)):
             ]
         )
 
-        # 4. SMART FALLBACK LOOP: Try models until one works
+        # 4. SMART FALLBACK LOOP
         vision_models_to_try = [
-            "llama-3.2-11b-vision-instruct",  # Newest Groq Vision Model
-            "llama-3.2-90b-vision-instruct",  # Larger Groq Vision Model
-            "llama-3.2-11b-vision-preview",   # Old Groq Vision Model
-            "qwen/qwen3.6-27b"                # Fallback from your other project
+            "llama-3.2-11b-vision-instruct",
+            "llama-3.2-90b-vision-instruct",
+            "llama-3.2-11b-vision-preview",
+            "qwen/qwen3.6-27b"
         ]
         
         response_text = None
@@ -71,24 +92,18 @@ async def analyze_scene(image: UploadFile = File(...)):
                 response = llm.invoke([msg])
                 raw_text = response.content.strip()
                 
-                # --- NEW: FORCE CLEANUP OF <think> TAGS ---
-                # 1. Delete everything inside <think>...</think> or <thought>...</thought>
+                # Force Cleanup of <think> tags
                 clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
                 clean_text = re.sub(r'<thought>.*?</thought>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
-                
-                # 2. Remove any stray < or > characters just to be 100% safe
                 clean_text = clean_text.replace('<', '').replace('>', '')
-                
-                # 3. Strip any leftover blank spaces or newlines
                 response_text = clean_text.strip()
-                # ------------------------------------------
 
                 print(f"✅ Success with {model_name}!")
-                break  # It worked! Exit the loop.
+                break
             except Exception as e:
                 print(f"❌ Failed with {model_name}: {str(e)}")
                 last_error = str(e)
-                continue  # Try the next model in the list
+                continue
 
         # Clean up the image file
         if os.path.exists(temp_image_path):
@@ -105,6 +120,24 @@ async def analyze_scene(image: UploadFile = File(...)):
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
         return {"status": "error", "message": str(e)}
+
+
+# ==========================================
+# V2: INTERACTIVE SEARCH & ASSIST MODE (Ready for later)
+# ==========================================
+@app.post("/ask-vision")
+async def ask_vision(image: UploadFile = File(...), question: str = Form(...), language: str = Form("english")):
+    # This endpoint is ready for when you want to add the "Where is my medicine?" feature
+    return {"status": "success", "script": "This endpoint is ready for V2 testing."}
+
+# ==========================================
+# V2: NAVIGATION / WALK MODE (Ready for later)
+# ==========================================
+@app.post("/navigate")
+async def navigate(image: UploadFile = File(...), language: str = Form("english")):
+    # This endpoint is ready for when you want to add the walking feature
+    return {"status": "success", "script": "This endpoint is ready for V2 testing."}
+
 
 if __name__ == "__main__":
     import uvicorn
