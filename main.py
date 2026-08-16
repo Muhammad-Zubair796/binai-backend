@@ -37,28 +37,20 @@ def call_groq_vision(msg, fast_mode=False):
     return None
 
 # ==========================================
-# MODE 1: NORMAL DETECTION ("What is in front of me?")
+# MODE 1: NORMAL DETECTION (Triggered by Double Tap)
 # ==========================================
 @app.post("/analyze-scene")
-async def analyze_scene(image: UploadFile = File(...), language: str = Form("english")):
+async def analyze_scene(image: UploadFile = File(...)):
     temp_path = f"temp_norm_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
         with open(temp_path, "rb") as img_file: base64_image = base64.b64encode(img_file.read()).decode('utf-8')
 
-        if language.lower() == "urdu":
-            prompt = """You are a human-like assistant for a blind person. Describe the scene in front of them.
-            RULES:
-            1. Speak ONLY in Roman Urdu (e.g., 'Aap ke samnay aik mez hai'). NO Hindi words.
-            2. Be friendly and conversational.
-            3. Warn about hazards immediately.
-            4. Output ONLY the spoken words."""
-        else:
-            prompt = """You are a human-like assistant for a blind person. Describe the scene in front of them.
-            RULES:
-            1. Be friendly and conversational.
-            2. Warn about hazards immediately.
-            3. Output ONLY the spoken words."""
+        prompt = """You are a human-like assistant for a blind person. Describe the scene in front of them.
+        RULES:
+        1. Be friendly and conversational.
+        2. Warn about hazards immediately.
+        3. Output ONLY the spoken words."""
 
         msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
         result = call_groq_vision(msg)
@@ -70,28 +62,20 @@ async def analyze_scene(image: UploadFile = File(...), language: str = Form("eng
         return {"status": "error", "message": str(e)}
 
 # ==========================================
-# MODE 2: SEARCH & ASSIST ("Where is my medicine?")
+# MODE 2: SEARCH & ASSIST (Triggered by Swipe Up + Voice)
 # ==========================================
 @app.post("/ask-vision")
-async def ask_vision(image: UploadFile = File(...), question: str = Form(...), language: str = Form("english")):
+async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
     temp_path = f"temp_ask_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
         with open(temp_path, "rb") as img_file: base64_image = base64.b64encode(img_file.read()).decode('utf-8')
 
-        if language.lower() == "urdu":
-            prompt = f"""You are a human assistant helping a blind person find something. They asked: "{question}"
-            RULES:
-            1. Speak ONLY in Roman Urdu. NO Hindi words.
-            2. IF YOU SEE IT: Tell them exactly where it is (e.g., 'Dawai aap ke daen taraf mez par hai').
-            3. IF YOU DO NOT SEE IT: Act like a human guiding them. Say you don't see it, and tell them to move the camera or look somewhere else (e.g., 'Mujhe yahan dawai nazar nahi aa rahi. Apna camera thora baen (left) ghumayen, ya samnay wali daraz khol kar dekhein').
-            4. Output ONLY the spoken words."""
-        else:
-            prompt = f"""You are a human assistant helping a blind person find something. They asked: "{question}"
-            RULES:
-            1. IF YOU SEE IT: Tell them exactly where it is (e.g., 'Your medicine is on the table to your right').
-            2. IF YOU DO NOT SEE IT: Act like a human guiding them. Say you don't see it, and tell them to move the camera or look somewhere else (e.g., 'I don't see it here. Try moving your camera to the left, or open the drawer in front of you').
-            3. Output ONLY the spoken words."""
+        prompt = f"""You are a human assistant helping a blind person find something. They asked: "{question}"
+        RULES:
+        1. IF YOU SEE IT: Tell them exactly where it is (e.g., 'Your medicine is on the table to your right').
+        2. IF YOU DO NOT SEE IT: Act like a human guiding them. Say you don't see it, and tell them to move the camera or look somewhere else (e.g., 'I don't see it here. Try moving your camera to the left, or open the drawer in front of you').
+        3. Output ONLY the spoken words."""
 
         msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
         result = call_groq_vision(msg)
@@ -103,33 +87,24 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...), l
         return {"status": "error", "message": str(e)}
 
 # ==========================================
-# MODE 3: WALK MODE ("Help me walk")
+# MODE 3: WALK MODE (Triggered by Long Press)
 # ==========================================
 @app.post("/navigate")
-async def navigate(image: UploadFile = File(...), language: str = Form("english")):
+async def navigate(image: UploadFile = File(...)):
     temp_path = f"temp_nav_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
         with open(temp_path, "rb") as img_file: base64_image = base64.b64encode(img_file.read()).decode('utf-8')
 
-        if language.lower() == "urdu":
-            prompt = """You are a real-time walking guide for a blind person. Safety is your priority.
-            RULES:
-            1. Speak ONLY in Roman Urdu. NO Hindi words.
-            2. Keep it extremely short (1 sentence).
-            3. Estimate distance and warn of hazards (e.g., 'Aik meter aage darwaza khula hai', 'Aage seerhian hain aram se qadam rakhein').
-            4. If blurry, say: 'Tasveer saaf nahi hai, ehtiyat se qadam rakhein'.
-            5. Output ONLY the spoken words."""
-        else:
-            prompt = """You are a real-time walking guide for a blind person. Safety is your priority.
-            RULES:
-            1. Keep it extremely short (1 sentence).
-            2. Estimate distance and warn of hazards (e.g., 'Door open 1 meter ahead', 'Stairs ahead, step carefully').
-            3. If blurry, say: 'Image is not clear, step carefully'.
-            4. Output ONLY the spoken words."""
+        prompt = """You are a real-time walking guide for a blind person. Safety is your priority.
+        RULES:
+        1. Keep it extremely short (1 sentence).
+        2. Estimate distance and warn of hazards (e.g., 'Door open 1 meter ahead', 'Stairs ahead, step carefully').
+        3. If blurry, say: 'Image is not clear, step carefully'.
+        4. Output ONLY the spoken words."""
 
         msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-        result = call_groq_vision(msg, fast_mode=True) # Uses faster models for walking
+        result = call_groq_vision(msg, fast_mode=True) 
         
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
