@@ -26,8 +26,12 @@ async def analyze_scene(image: UploadFile = File(...)):
         img.save(buffered, format="JPEG", quality=85)
         base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        # 2. The Prompt (Simplified to prevent errors)
-        prompt_text = "You are the eyes for a blind person. Describe the scene in 3 simple sentences. Warn about hazards or read medicine names if seen. Do not use lists, rules, or markdown. Speak naturally."
+        # 2. The Pro Prompt (Strictly for description)
+        prompt_text = """
+        Describe this scene for a blind person in 3 simple, friendly sentences. 
+        Identify objects, read medicine names, and warn about hazards. 
+        Output ONLY the description. Do not mention rules, instructions, or markdown.
+        """
 
         msg = HumanMessage(
             content=[
@@ -36,43 +40,38 @@ async def analyze_scene(image: UploadFile = File(...)):
             ]
         )
 
-        # 3. Updated Model List (Newest Groq IDs)
+        # 3. ACTIVE MODEL LIST (Instruct versions)
+        # These are the current replacements for the decommissioned preview models.
         vision_models_to_try = [
-            "llama-3.2-11b-vision-preview",
-            "llama-3.2-90b-vision-preview",
-            "llava-v1.5-7b-4096-preview"
+            "llama-3.2-11b-vision-instruct",
+            "llama-3.2-90b-vision-instruct"
         ]
         
         response_text = None
-        error_details = ""
+        error_log = ""
 
         for model_name in vision_models_to_try:
             try:
-                print(f"Attempting {model_name}...")
                 llm = ChatGroq(
                     model=model_name, 
-                    temperature=0.2,
+                    temperature=0.1,
                     groq_api_key=os.getenv("GROQ_API_KEY")
                 )
                 response = llm.invoke([msg])
                 response_text = response.content.strip()
-                
                 if response_text:
-                    print(f"✅ Success with {model_name}")
                     break
             except Exception as e:
-                print(f"❌ {model_name} failed: {str(e)}")
-                error_details += f"{model_name}: {str(e)}. "
+                error_log += f"{model_name}: {str(e)} "
                 continue
 
         if response_text:
             return {"status": "success", "script": response_text}
         else:
-            # This will show you the REAL error in the JSON response
-            return {"status": "error", "message": f"AI Error: {error_details}"}
+            return {"status": "error", "message": f"Models failed. Details: {error_log}"}
 
     except Exception as e:
-        return {"status": "error", "message": f"System Error: {str(e)}"}
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
