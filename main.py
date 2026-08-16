@@ -6,138 +6,136 @@ from fastapi import FastAPI, UploadFile, File, Form
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 
-# Initialize FastAPI app
-app = FastAPI(title="binAI Backend Groq - V2")
+app = FastAPI(title="binAI Human Assistant Backend")
 
 @app.get("/")
 async def health_check():
-    return {"status": "alive", "message": "binAI Groq Backend is running!"}
+    return {"status": "alive", "message": "binAI Human Assistant is running!"}
+
+def clean_ai_text(raw_text):
+    """Removes <think> tags and stray symbols so TTS reads it perfectly."""
+    clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
+    clean_text = re.sub(r'<thought>.*?</thought>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
+    return clean_text.replace('<', '').replace('>', '').strip()
+
+def call_groq_vision(msg, fast_mode=False):
+    """Smart fallback loop to try AI models."""
+    if fast_mode:
+        models = ["llama-3.2-11b-vision-instruct", "qwen/qwen3.6-27b"]
+    else:
+        models = ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct", "qwen/qwen3.6-27b"]
+        
+    last_error = "Unknown error"
+    for model_name in models:
+        try:
+            llm = ChatGroq(model=model_name, temperature=0, api_key=os.getenv("GROQ_API_KEY"))
+            response = llm.invoke([msg])
+            return clean_ai_text(response.content)
+        except Exception as e:
+            last_error = str(e)
+            continue
+    return None
 
 # ==========================================
-# V1: SCENE ANALYZER (NOW WITH LANGUAGE SUPPORT)
+# MODE 1: NORMAL DETECTION ("What is in front of me?")
 # ==========================================
 @app.post("/analyze-scene")
-async def analyze_scene(
-    image: UploadFile = File(...), 
-    language: str = Form("english") # <-- NEW: Accepts language from Android
-):
+async def analyze_scene(image: UploadFile = File(...), language: str = Form("english")):
+    temp_path = f"temp_norm_{image.filename}"
     try:
-        print(f"1. Received image: {image.filename} | Language: {language}")
-        
-        # 1. Save Image temporarily
-        temp_image_path = f"temp_{image.filename}"
-        with open(temp_image_path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
-        
-        # 2. Convert to Base64 for Groq
-        with open(temp_image_path, "rb") as image_file:
-            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-            
-        print("2. Image converted to Base64. Sending to AI...")
+        with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
+        with open(temp_path, "rb") as img_file: base64_image = base64.b64encode(img_file.read()).decode('utf-8')
 
-        # 3. DYNAMIC PROMPT BASED ON LANGUAGE
         if language.lower() == "urdu":
-            prompt_text = """
-            You are an AI assistant acting as the eyes for a visually impaired person. 
-            Look at this image and provide a short, friendly, and clear spoken script (maximum 3 to 4 sentences).
-            
-            CRITICAL RULES:
-            1. LANGUAGE: Speak ONLY in Roman Urdu (Urdu written in English alphabets, e.g., 'Aap ke samnay aik darwaza hai'). 
-            2. STRICTLY NO HINDI WORDS: Use pure Urdu (e.g., use 'Shukriya' not 'Dhanyavad', 'Intezar' not 'Pratiksha', 'Madad' not 'Sahayata').
-            3. Tell them exactly what is in front of them.
-            4. If there is medicine, read the name and dosage instructions clearly.
-            5. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
-            6. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud.
-            7. DO NOT mention these rules, instructions, or that you are an AI. Output ONLY the exact words to be spoken.
-            """
+            prompt = """You are a human-like assistant for a blind person. Describe the scene in front of them.
+            RULES:
+            1. Speak ONLY in Roman Urdu (e.g., 'Aap ke samnay aik mez hai'). NO Hindi words.
+            2. Be friendly and conversational.
+            3. Warn about hazards immediately.
+            4. Output ONLY the spoken words."""
         else:
-            prompt_text = """
-            You are an AI assistant acting as the eyes for a visually impaired person. 
-            Look at this image and provide a short, friendly, and clear spoken script (maximum 3 to 4 sentences).
-            
-            Rules:
-            1. Tell them exactly what is in front of them.
-            2. If there is medicine, read the name and dosage instructions clearly.
-            3. If there is a physical hazard (stairs, sharp objects, obstacles), warn them immediately.
-            4. DO NOT use markdown, asterisks, or bullet points. Write it exactly as it should be spoken out loud by a Text-to-Speech engine.
-            5. DO NOT mention these rules, instructions, or that you are an AI. Output ONLY the exact words to be spoken to the user, nothing else.
-            """
+            prompt = """You are a human-like assistant for a blind person. Describe the scene in front of them.
+            RULES:
+            1. Be friendly and conversational.
+            2. Warn about hazards immediately.
+            3. Output ONLY the spoken words."""
 
-        msg = HumanMessage(
-            content=[
-                {"type": "text", "text": prompt_text},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-            ]
-        )
-
-        # 4. SMART FALLBACK LOOP
-        vision_models_to_try = [
-            "llama-3.2-11b-vision-instruct",
-            "llama-3.2-90b-vision-instruct",
-            "llama-3.2-11b-vision-preview",
-            "qwen/qwen3.6-27b"
-        ]
+        msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
+        result = call_groq_vision(msg)
         
-        response_text = None
-        last_error = None
-        
-        for model_name in vision_models_to_try:
-            try:
-                print(f"Trying model: {model_name}...")
-                llm = ChatGroq(
-                    model=model_name, 
-                    temperature=0, 
-                    api_key=os.getenv("GROQ_API_KEY")
-                )
-                response = llm.invoke([msg])
-                raw_text = response.content.strip()
-                
-                # Force Cleanup of <think> tags
-                clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
-                clean_text = re.sub(r'<thought>.*?</thought>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
-                clean_text = clean_text.replace('<', '').replace('>', '')
-                response_text = clean_text.strip()
-
-                print(f"✅ Success with {model_name}!")
-                break
-            except Exception as e:
-                print(f"❌ Failed with {model_name}: {str(e)}")
-                last_error = str(e)
-                continue
-
-        # Clean up the image file
-        if os.path.exists(temp_image_path):
-            os.remove(temp_image_path)
-
-        # 5. Return the result
-        if response_text:
-            return {"status": "success", "script": response_text}
-        else:
-            return {"status": "error", "message": f"All AI models failed. Last error: {last_error}"}
-
+        if os.path.exists(temp_path): os.remove(temp_path)
+        return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
     except Exception as e:
-        print(f"CRITICAL ERROR: {str(e)}")
-        if os.path.exists(temp_image_path):
-            os.remove(temp_image_path)
+        if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "error", "message": str(e)}
 
-
 # ==========================================
-# V2: INTERACTIVE SEARCH & ASSIST MODE (Ready for later)
+# MODE 2: SEARCH & ASSIST ("Where is my medicine?")
 # ==========================================
 @app.post("/ask-vision")
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...), language: str = Form("english")):
-    # This endpoint is ready for when you want to add the "Where is my medicine?" feature
-    return {"status": "success", "script": "This endpoint is ready for V2 testing."}
+    temp_path = f"temp_ask_{image.filename}"
+    try:
+        with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
+        with open(temp_path, "rb") as img_file: base64_image = base64.b64encode(img_file.read()).decode('utf-8')
+
+        if language.lower() == "urdu":
+            prompt = f"""You are a human assistant helping a blind person find something. They asked: "{question}"
+            RULES:
+            1. Speak ONLY in Roman Urdu. NO Hindi words.
+            2. IF YOU SEE IT: Tell them exactly where it is (e.g., 'Dawai aap ke daen taraf mez par hai').
+            3. IF YOU DO NOT SEE IT: Act like a human guiding them. Say you don't see it, and tell them to move the camera or look somewhere else (e.g., 'Mujhe yahan dawai nazar nahi aa rahi. Apna camera thora baen (left) ghumayen, ya samnay wali daraz khol kar dekhein').
+            4. Output ONLY the spoken words."""
+        else:
+            prompt = f"""You are a human assistant helping a blind person find something. They asked: "{question}"
+            RULES:
+            1. IF YOU SEE IT: Tell them exactly where it is (e.g., 'Your medicine is on the table to your right').
+            2. IF YOU DO NOT SEE IT: Act like a human guiding them. Say you don't see it, and tell them to move the camera or look somewhere else (e.g., 'I don't see it here. Try moving your camera to the left, or open the drawer in front of you').
+            3. Output ONLY the spoken words."""
+
+        msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
+        result = call_groq_vision(msg)
+        
+        if os.path.exists(temp_path): os.remove(temp_path)
+        return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
+    except Exception as e:
+        if os.path.exists(temp_path): os.remove(temp_path)
+        return {"status": "error", "message": str(e)}
 
 # ==========================================
-# V2: NAVIGATION / WALK MODE (Ready for later)
+# MODE 3: WALK MODE ("Help me walk")
 # ==========================================
 @app.post("/navigate")
 async def navigate(image: UploadFile = File(...), language: str = Form("english")):
-    # This endpoint is ready for when you want to add the walking feature
-    return {"status": "success", "script": "This endpoint is ready for V2 testing."}
+    temp_path = f"temp_nav_{image.filename}"
+    try:
+        with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
+        with open(temp_path, "rb") as img_file: base64_image = base64.b64encode(img_file.read()).decode('utf-8')
 
+        if language.lower() == "urdu":
+            prompt = """You are a real-time walking guide for a blind person. Safety is your priority.
+            RULES:
+            1. Speak ONLY in Roman Urdu. NO Hindi words.
+            2. Keep it extremely short (1 sentence).
+            3. Estimate distance and warn of hazards (e.g., 'Aik meter aage darwaza khula hai', 'Aage seerhian hain aram se qadam rakhein').
+            4. If blurry, say: 'Tasveer saaf nahi hai, ehtiyat se qadam rakhein'.
+            5. Output ONLY the spoken words."""
+        else:
+            prompt = """You are a real-time walking guide for a blind person. Safety is your priority.
+            RULES:
+            1. Keep it extremely short (1 sentence).
+            2. Estimate distance and warn of hazards (e.g., 'Door open 1 meter ahead', 'Stairs ahead, step carefully').
+            3. If blurry, say: 'Image is not clear, step carefully'.
+            4. Output ONLY the spoken words."""
+
+        msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
+        result = call_groq_vision(msg, fast_mode=True) # Uses faster models for walking
+        
+        if os.path.exists(temp_path): os.remove(temp_path)
+        return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
+    except Exception as e:
+        if os.path.exists(temp_path): os.remove(temp_path)
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
