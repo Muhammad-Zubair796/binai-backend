@@ -28,7 +28,7 @@ async def analyze_scene(image: UploadFile = File(...)):
             
         print("2. Image converted to Base64. Sending to AI...")
 
-        # 3. UPDATED PROMPT: No "Rules" or "Numbers" to prevent the AI from reading them.
+        # 3. UPDATED PROMPT: No "Rules" or "Numbers" so the AI stays silent about instructions.
         prompt_text = """
         You are the eyes for a visually impaired person. Describe the scene in front of them in 3 to 4 friendly sentences. 
         Identify objects clearly, read any medicine names or dosages visible, and warn about hazards like stairs or obstacles. 
@@ -42,12 +42,12 @@ async def analyze_scene(image: UploadFile = File(...)):
             ]
         )
 
-        # 4. SMART FALLBACK LOOP: Exact same models as before
+        # 4. SMART FALLBACK LOOP: Moved the working model to the top for speed
         vision_models_to_try = [
-            "llama-3.2-11b-vision-instruct",  # Newest Groq Vision Model
-            "llama-3.2-90b-vision-instruct",  # Larger Groq Vision Model
-            "llama-3.2-11b-vision-preview",   # Old Groq Vision Model
-            "qwen/qwen3.6-27b"                # Fallback from your other project
+            "qwen/qwen3.6-27b",                # THIS ONE WORKS IN YOUR LOGS
+            "llama-3.2-11b-vision-instruct",  
+            "llama-3.2-90b-vision-instruct",  
+            "llama-3.2-11b-vision-preview"
         ]
         
         response_text = None
