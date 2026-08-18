@@ -2,6 +2,7 @@ import os
 import shutil
 import base64
 import re
+import itertools
 from fastapi import FastAPI, UploadFile, File, Form
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -9,8 +10,18 @@ from langchain_core.messages import HumanMessage
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
+# ==========================================
+# API KEY ROTATOR SETUP
+# ==========================================
+# You can put multiple keys in Render separated by commas: KEY1,KEY2,KEY3
+google_keys_env = os.getenv("GOOGLE_API_KEYS", os.getenv("GOOGLE_API_KEY", ""))
+google_keys = [k.strip() for k in google_keys_env.split(",") if k.strip()]
+
+# This will cycle through your keys: Key 1 -> Key 2 -> Key 3 -> Key 1...
+key_iterator = itertools.cycle(google_keys) if google_keys else None
+
 @app.get("/")
-@app.head("/") # Added this so Render's health check stops giving 405 errors
+@app.head("/")
 async def health_check():
     print("Health check endpoint pinged.")
     return {"status": "alive", "message": "binAI Human Assistant is running!"}
@@ -22,17 +33,25 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(msg, fast_mode=False):
-    """Smart fallback loop: Tries Groq first, then falls back to Google Gemini."""
-    
-    # 1. Define Groq Models
-    if fast_mode:
-        groq_models = ["llama-3.2-11b-vision-instruct", "qwen/qwen3.6-27b"]
-    else:
-        groq_models = ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct", "qwen/qwen3.6-27b"]
-        
+    """Smart fallback loop: Tries Google Gemini FIRST, then falls back to Groq."""
     last_error = "Unknown error"
     
-    # 2. Try Groq Models First
+    # 1. Try Google Gemini First (Best Free Tier)
+    if key_iterator:
+        current_key = next(key_iterator) # Get the next key in the rotation
+        try:
+            print(f"Attempting Google Gemini with a rotated key...")
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, api_key=current_key)
+            response = llm.invoke([msg])
+            print("Success! Google Gemini generated a response.")
+            return clean_ai_text(response.content)
+        except Exception as e:
+            last_error = str(e)
+            print(f"FAILED Google Gemini. Error: {last_error}")
+
+    # 2. Fallback to Groq if Gemini fails
+    groq_models = ["llama-3.2-11b-vision-instruct"] if fast_mode else ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct"]
+    
     for model_name in groq_models:
         try:
             print(f"Attempting Groq model: {model_name}")
@@ -44,28 +63,16 @@ def call_vision_model(msg, fast_mode=False):
             last_error = str(e)
             print(f"FAILED Groq model {model_name}. Error: {last_error}")
             continue
-            
-    # 3. Fallback to Google Gemini if Groq fails
-    try:
-        print("Groq failed. Falling back to Google Gemini (gemini-1.5-flash)...")
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, api_key=os.getenv("GOOGLE_API_KEY"))
-        response = llm.invoke([msg])
-        print("Success! Google Gemini generated a response.")
-        return clean_ai_text(response.content)
-    except Exception as e:
-        last_error = str(e)
-        print(f"FAILED Google Gemini. Error: {last_error}")
 
-    # 4. If everything fails
-    print(f"CRITICAL: ALL models (Groq and Google) failed. Last error: {last_error}")
+    # 3. If everything fails
+    print(f"CRITICAL: ALL models failed. Last error: {last_error}")
     return None
 
 # ==========================================
-# MODE 1: NORMAL DETECTION (Triggered by Double Tap)
+# MODE 1: NORMAL DETECTION (Double Tap)
 # ==========================================
 @app.post("/analyze-scene")
 async def analyze_scene(image: UploadFile = File(...)):
-    print("--- Endpoint /analyze-scene triggered ---")
     temp_path = f"temp_norm_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -81,19 +88,16 @@ async def analyze_scene(image: UploadFile = File(...)):
         result = call_vision_model(msg)
         
         if os.path.exists(temp_path): os.remove(temp_path)
-        print(f"/analyze-scene finished. Did AI return a result? {bool(result)}")
         return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
     except Exception as e:
-        print(f"EXCEPTION caught in /analyze-scene: {str(e)}")
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "error", "message": str(e)}
 
 # ==========================================
-# MODE 2: SEARCH & ASSIST (Triggered by Swipe Up + Voice)
+# MODE 2: SEARCH & ASSIST (Swipe Up)
 # ==========================================
 @app.post("/ask-vision")
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
-    print(f"--- Endpoint /ask-vision triggered with question: {question} ---")
     temp_path = f"temp_ask_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -101,27 +105,24 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
 
         prompt = f"""You are a human assistant helping a blind person find something. They asked: "{question}"
         RULES:
-        1. IF YOU SEE IT: Tell them exactly where it is (e.g., 'Your medicine is on the table to your right').
-        2. IF YOU DO NOT SEE IT: Act like a human guiding them. Say you don't see it, and tell them to move the camera or look somewhere else (e.g., 'I don't see it here. Try moving your camera to the left, or open the drawer in front of you').
+        1. IF YOU SEE IT: Tell them exactly where it is.
+        2. IF YOU DO NOT SEE IT: Act like a human guiding them. Say you don't see it, and tell them to move the camera.
         3. Output ONLY the spoken words."""
 
         msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
         result = call_vision_model(msg)
         
         if os.path.exists(temp_path): os.remove(temp_path)
-        print(f"/ask-vision finished. Did AI return a result? {bool(result)}")
         return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
     except Exception as e:
-        print(f"EXCEPTION caught in /ask-vision: {str(e)}")
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "error", "message": str(e)}
 
 # ==========================================
-# MODE 3: WALK MODE (Triggered by Long Press)
+# MODE 3: WALK MODE (Long Press)
 # ==========================================
 @app.post("/navigate")
 async def navigate(image: UploadFile = File(...)):
-    print("--- Endpoint /navigate triggered ---")
     temp_path = f"temp_nav_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -130,18 +131,15 @@ async def navigate(image: UploadFile = File(...)):
         prompt = """You are a real-time walking guide for a blind person. Safety is your priority.
         RULES:
         1. Keep it extremely short (1 sentence).
-        2. Estimate distance and warn of hazards (e.g., 'Door open 1 meter ahead', 'Stairs ahead, step carefully').
-        3. If blurry, say: 'Image is not clear, step carefully'.
-        4. Output ONLY the spoken words."""
+        2. Estimate distance and warn of hazards.
+        3. Output ONLY the spoken words."""
 
         msg = HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
         result = call_vision_model(msg, fast_mode=True) 
         
         if os.path.exists(temp_path): os.remove(temp_path)
-        print(f"/navigate finished. Did AI return a result? {bool(result)}")
         return {"status": "success", "script": result} if result else {"status": "error", "message": "AI failed."}
     except Exception as e:
-        print(f"EXCEPTION caught in /navigate: {str(e)}")
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "error", "message": str(e)}
 
