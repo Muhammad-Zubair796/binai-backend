@@ -6,7 +6,6 @@ import itertools
 from fastapi import FastAPI, UploadFile, File, Form
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 app = FastAPI(title="binAI Human Assistant Backend")
@@ -17,10 +16,6 @@ app = FastAPI(title="binAI Human Assistant Backend")
 google_keys_env = os.getenv("GOOGLE_API_KEYS", "")
 google_keys = [k.strip() for k in google_keys_env.split(",") if k.strip()]
 key_iterator = itertools.cycle(google_keys) if google_keys else None
-
-print(f"DEBUG: Loaded {len(google_keys)} Google Keys.")
-print(f"DEBUG: SambaNova Key Present: {bool(os.getenv('SAMBANOVA_API_KEY'))}")
-print(f"DEBUG: Groq Key Present: {bool(os.getenv('GROQ_API_KEY'))}")
 
 @app.get("/")
 @app.head("/")
@@ -33,42 +28,28 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(msg, fast_mode=False):
-    """Tries 4 Google keys -> SambaNova -> Groq."""
+    """Tries 4 Google keys -> Groq."""
     
-    # 1. Try Google Gemini
+    # 1. Try Google Gemini (Fixed model name)
     if google_keys:
         for i in range(len(google_keys)):
             current_key = next(key_iterator)
             try:
-                print(f"DEBUG: Attempting Google Key #{i+1}")
+                # Changed to gemini-1.5-flash
                 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, api_key=current_key)
                 response = llm.invoke([msg])
-                print("DEBUG: Google Success!")
                 return clean_ai_text(response.content)
             except Exception as e:
                 print(f"DEBUG: Google Key #{i+1} Failed: {str(e)}")
                 continue
 
-    # 2. Try SambaNova
-    sambanova_key = os.getenv("SAMBANOVA_API_KEY")
-    if sambanova_key:
-        try:
-            print("DEBUG: Attempting SambaNova (Llama 3.2 Vision)")
-            llm = ChatOpenAI(model="Llama-3.2-11B-Vision-Instruct", api_key=sambanova_key, base_url="https://api.sambanova.ai/v1")
-            response = llm.invoke([msg])
-            print("DEBUG: SambaNova Success!")
-            return clean_ai_text(response.content)
-        except Exception as e:
-            print(f"DEBUG: SambaNova Failed: {str(e)}")
-
-    # 3. Try Groq
+    # 2. Try Groq (Fixed model name to preview)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:
-            print("DEBUG: Attempting Groq (Llama 3.2 Vision)")
-            llm = ChatGroq(model="llama-3.2-11b-vision-instruct", temperature=0, api_key=groq_key)
+            # Changed to llama-3.2-11b-vision-preview
+            llm = ChatGroq(model="llama-3.2-11b-vision-preview", temperature=0, api_key=groq_key)
             response = llm.invoke([msg])
-            print("DEBUG: Groq Success!")
             return clean_ai_text(response.content)
         except Exception as e:
             print(f"DEBUG: Groq Failed: {str(e)}")
@@ -77,7 +58,6 @@ def call_vision_model(msg, fast_mode=False):
 
 @app.post("/analyze-scene")
 async def analyze_scene(image: UploadFile = File(...)):
-    print("DEBUG: Received /analyze-scene request")
     temp_path = f"temp_norm_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -88,12 +68,10 @@ async def analyze_scene(image: UploadFile = File(...)):
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
     except Exception as e:
-        print(f"DEBUG: Critical Error in analyze-scene: {str(e)}")
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/ask-vision")
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
-    print(f"DEBUG: Received /ask-vision request: {question}")
     temp_path = f"temp_ask_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -104,12 +82,10 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
     except Exception as e:
-        print(f"DEBUG: Critical Error in ask-vision: {str(e)}")
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/navigate")
 async def navigate(image: UploadFile = File(...)):
-    print("DEBUG: Received /navigate request")
     temp_path = f"temp_nav_{image.filename}"
     try:
         with open(temp_path, "wb") as buffer: shutil.copyfileobj(image.file, buffer)
@@ -120,7 +96,6 @@ async def navigate(image: UploadFile = File(...)):
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
     except Exception as e:
-        print(f"DEBUG: Critical Error in navigate: {str(e)}")
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 if __name__ == "__main__":
