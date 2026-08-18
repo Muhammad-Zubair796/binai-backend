@@ -35,18 +35,15 @@ def clean_ai_text(raw_text):
 def call_vision_model(prompt, image_bytes):
     """Bulletproof Router: Tries multiple models per provider automatically."""
     
-    # Get models from Environment Variables (This is how you update without coding!)
     env_g_model = os.getenv("GOOGLE_MODEL", "")
     env_or_model = os.getenv("OPENROUTER_MODEL", "")
     env_groq_model = os.getenv("GROQ_MODEL", "")
 
     # 1. Try Google Gemini
     if google_keys:
-        # We added gemini-3.6-flash because the logs explicitly asked for it!
-        # We also use -latest tags which are supposed to auto-update and never 404.
         google_models_to_try = ['gemini-3.6-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest']
         if env_g_model:
-            google_models_to_try.insert(0, env_g_model) # Put Render Env Var first
+            google_models_to_try.insert(0, env_g_model)
         
         for i in range(len(google_keys)):
             current_key = next(key_iterator)
@@ -67,7 +64,6 @@ def call_vision_model(prompt, image_bytes):
     # 2. Try OpenRouter
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
-        # Updated to the most stable current free vision models on OpenRouter
         or_models_to_try = ["meta-llama/llama-3.2-11b-vision-instruct:free", "qwen/qwen-2-vl-72b-instruct:free"]
         if env_or_model:
             or_models_to_try.insert(0, env_or_model)
@@ -88,7 +84,6 @@ def call_vision_model(prompt, image_bytes):
     # 3. Try Groq
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        # Groq deleted 'preview', so we use the official 'instruct' names
         groq_models_to_try = ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct"]
         if env_groq_model:
             groq_models_to_try.insert(0, env_groq_model)
@@ -115,7 +110,8 @@ async def analyze_scene(image: UploadFile = File(...)):
         prompt = "Describe the scene for a blind person. Be conversational and warn of hazards."
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
-    except Exception:
+    except Exception as e:
+        print(f"DEBUG: ENDPOINT ERROR in analyze-scene: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/ask-vision")
@@ -125,7 +121,8 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
         prompt = f"The user asks: {question}. Tell them where the object is or guide them."
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
-    except Exception:
+    except Exception as e:
+        print(f"DEBUG: ENDPOINT ERROR in ask-vision: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/navigate")
@@ -135,7 +132,8 @@ async def navigate(image: UploadFile = File(...)):
         prompt = "Walking guide: 1 short sentence about what is directly ahead and distance."
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
-    except Exception:
+    except Exception as e:
+        print(f"DEBUG: ENDPOINT ERROR in navigate: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 if __name__ == "__main__":
