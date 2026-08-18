@@ -28,47 +28,40 @@ def clean_ai_text(raw_text):
     clean_text = re.sub(r'<thought>.*?</thought>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
     return clean_text.replace('<', '').replace('>', '').strip()
 
-def call_vision_model(msg, fast_mode=False):
+def call_vision_model(msg):
     """Tries 4 Google keys -> OpenRouter -> Groq."""
     
-    # 1. Try Google Gemini (Fixed Model Name)
+    # 1. Try Google Gemini
     if google_keys:
         for i in range(len(google_keys)):
             current_key = next(key_iterator)
             try:
-                print(f"DEBUG: Trying Google Key #{i+1}")
                 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, api_key=current_key)
                 response = llm.invoke([msg])
-                return clean_ai_text(response.content)
+                return f"Gemini {i+1} says: " + clean_ai_text(response.content)
             except Exception as e:
-                print(f"DEBUG: Google Failed: {str(e)}")
+                print(f"DEBUG: Google Key {i+1} Error: {str(e)}")
                 continue
 
     # 2. Try OpenRouter (Free Gemini 2.0)
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
         try:
-            print("DEBUG: Trying OpenRouter Free Model")
-            llm = ChatOpenAI(
-                model="google/gemini-2.0-flash-exp:free", 
-                api_key=openrouter_key, 
-                base_url="https://openrouter.ai/api/v1"
-            )
+            llm = ChatOpenAI(model="google/gemini-2.0-flash-exp:free", api_key=openrouter_key, base_url="https://openrouter.ai/api/v1")
             response = llm.invoke([msg])
-            return clean_ai_text(response.content)
+            return "OpenRouter says: " + clean_ai_text(response.content)
         except Exception as e:
-            print(f"DEBUG: OpenRouter Failed: {str(e)}")
+            print(f"DEBUG: OpenRouter Error: {str(e)}")
 
-    # 3. Try Groq (Fixed Model Name)
+    # 3. Try Groq
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:
-            print("DEBUG: Trying Groq")
             llm = ChatGroq(model="llama-3.2-11b-vision-preview", temperature=0, api_key=groq_key)
             response = llm.invoke([msg])
-            return clean_ai_text(response.content)
+            return "Groq says: " + clean_ai_text(response.content)
         except Exception as e:
-            print(f"DEBUG: Groq Failed: {str(e)}")
+            print(f"DEBUG: Groq Error: {str(e)}")
 
     return "Network error. Please contact Zubair for support."
 
@@ -83,7 +76,7 @@ async def analyze_scene(image: UploadFile = File(...)):
         result = call_vision_model(msg)
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
-    except Exception as e:
+    except Exception:
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/ask-vision")
@@ -97,7 +90,7 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
         result = call_vision_model(msg)
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
-    except Exception as e:
+    except Exception:
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/navigate")
@@ -108,10 +101,10 @@ async def navigate(image: UploadFile = File(...)):
         with open(temp_path, "rb") as img_file: base64_image = base64.b64encode(img_file.read()).decode('utf-8')
         prompt = "Walking guide: 1 short sentence about what is directly ahead and distance."
         msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-        result = call_vision_model(msg, fast_mode=True)
+        result = call_vision_model(msg)
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
-    except Exception as e:
+    except Exception:
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 if __name__ == "__main__":
