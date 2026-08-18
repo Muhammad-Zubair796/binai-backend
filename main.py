@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage
 from PIL import Image
 import io
 
-print("DEBUG: SERVER STARTING - BULLETPROOF EDITION V2", flush=True)
+print("DEBUG: SERVER STARTING - BULLETPROOF EDITION V3", flush=True)
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
@@ -41,7 +41,14 @@ def call_vision_model(prompt, image_bytes):
 
     # 1. Try Google Gemini
     if google_keys:
-        google_models_to_try = ['gemini-3.6-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest']
+        # Updated to the absolute latest from the new docs (3.7, 3.6, 3.5, 2.5)
+        google_models_to_try = [
+            'gemini-3.7-flash', 
+            'gemini-3.6-flash', 
+            'gemini-3.5-flash', 
+            'gemini-2.5-flash', 
+            'gemini-2.5-pro'
+        ]
         if env_g_model:
             google_models_to_try.insert(0, env_g_model)
         
@@ -64,7 +71,7 @@ def call_vision_model(prompt, image_bytes):
     # 2. Try OpenRouter
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
-        or_models_to_try = ["meta-llama/llama-3.2-11b-vision-instruct:free", "qwen/qwen-2-vl-72b-instruct:free"]
+        or_models_to_try = ["meta-llama/llama-3.2-11b-vision-instruct", "qwen/qwen-2-vl-72b-instruct"]
         if env_or_model:
             or_models_to_try.insert(0, env_or_model)
         
@@ -84,7 +91,8 @@ def call_vision_model(prompt, image_bytes):
     # 3. Try Groq
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        groq_models_to_try = ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct"]
+        # Updated to Llama 4 Scout based on Groq deprecation docs for Llama 3.2 Vision
+        groq_models_to_try = ["meta-llama/llama-4-scout-17b-16e-instruct"]
         if env_groq_model:
             groq_models_to_try.insert(0, env_groq_model)
 
