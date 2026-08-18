@@ -31,31 +31,34 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(msg):
-    """Tries 4 Google keys -> OpenRouter -> Groq."""
+    """Smart Search: Tries multiple model names automatically."""
     
-    # 1. Try Google Gemini (FIXED NAME)
+    # 1. Try Google Gemini with 3 different possible names
+    # Your logs showed 'gemini-1.5-flash-latest' failed, so we try the standard ones.
+    gemini_names = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-pro-vision"]
+    
     if google_keys:
-        for i in range(len(google_keys)):
+        for _ in range(len(google_keys)):
             current_key = next(key_iterator)
-            try:
-                print(f"DEBUG: Trying Google Key #{i+1}...", flush=True)
-                # Changed model name to gemini-1.5-flash-latest
-                llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0, api_key=current_key)
-                response = llm.invoke([msg])
-                print(f"DEBUG: Google Key #{i+1} SUCCESS", flush=True)
-                return clean_ai_text(response.content)
-            except Exception as e:
-                print(f"DEBUG: Google Key #{i+1} FAILED: {str(e)}", flush=True)
-                continue
+            for model_name in gemini_names:
+                try:
+                    print(f"DEBUG: Trying Google Key with {model_name}...", flush=True)
+                    llm = ChatGoogleGenerativeAI(model=model_name, temperature=0, api_key=current_key)
+                    response = llm.invoke([msg])
+                    print(f"DEBUG: SUCCESS with {model_name}", flush=True)
+                    return clean_ai_text(response.content)
+                except Exception as e:
+                    print(f"DEBUG: {model_name} failed: {str(e)}", flush=True)
+                    continue
 
-    # 2. Try OpenRouter (FIXED NAME)
+    # 2. Try OpenRouter (Using the most stable Free Vision slug)
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
+        # 'google/gemini-2.0-flash-exp:free' is the current correct free slug
         try:
-            print("DEBUG: Trying OpenRouter...", flush=True)
-            # Changed to the new stable free model
+            print("DEBUG: Trying OpenRouter (gemini-2.0-flash-exp:free)...", flush=True)
             llm = ChatOpenAI(
-                model="google/gemini-2.0-flash-001", 
+                model="google/gemini-2.0-flash-exp:free", 
                 api_key=openrouter_key, 
                 base_url="https://openrouter.ai/api/v1"
             )
@@ -65,18 +68,20 @@ def call_vision_model(msg):
         except Exception as e:
             print(f"DEBUG: OpenRouter FAILED: {str(e)}", flush=True)
 
-    # 3. Try Groq (FIXED NAME)
+    # 3. Try Groq (Trying the 90B model since your logs said 11B was missing)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        try:
-            print("DEBUG: Trying Groq...", flush=True)
-            # Changed from preview to instruct as requested by Groq logs
-            llm = ChatGroq(model="llama-3.2-11b-vision-instruct", temperature=0, api_key=groq_key)
-            response = llm.invoke([msg])
-            print("DEBUG: Groq SUCCESS", flush=True)
-            return clean_ai_text(response.content)
-        except Exception as e:
-            print(f"DEBUG: Groq FAILED: {str(e)}", flush=True)
+        groq_names = ["llama-3.2-90b-vision-preview", "llama-3.2-11b-vision-instruct"]
+        for g_model in groq_names:
+            try:
+                print(f"DEBUG: Trying Groq with {g_model}...", flush=True)
+                llm = ChatGroq(model=g_model, temperature=0, api_key=groq_key)
+                response = llm.invoke([msg])
+                print(f"DEBUG: Groq SUCCESS with {g_model}", flush=True)
+                return clean_ai_text(response.content)
+            except Exception as e:
+                print(f"DEBUG: Groq {g_model} FAILED: {str(e)}", flush=True)
+                continue
 
     return "Network error. Please contact Zubair for support."
 
