@@ -3,7 +3,8 @@ import shutil
 import base64
 import re
 import itertools
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from fastapi import FastAPI, UploadFile, File, Form
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
@@ -11,7 +12,7 @@ from langchain_core.messages import HumanMessage
 from PIL import Image
 import io
 
-print("DEBUG: SERVER STARTING...", flush=True)
+print("DEBUG: SERVER STARTING WITH NEW SDK...", flush=True)
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
@@ -21,18 +22,6 @@ app = FastAPI(title="binAI Human Assistant Backend")
 google_keys_env = os.getenv("GOOGLE_API_KEYS", "")
 google_keys = [k.strip() for k in google_keys_env.split(",") if k.strip()]
 key_iterator = itertools.cycle(google_keys) if google_keys else None
-
-# YOUR IDEA: List all working models for your keys
-if google_keys:
-    try:
-        print(f"DEBUG: Scanning available models for your Google Key...", flush=True)
-        genai.configure(api_key=google_keys[0])
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                # This will print the EXACT names Google wants
-                print(f"DEBUG: WORKING GOOGLE MODEL FOUND: {m.name}", flush=True)
-    except Exception as e:
-        print(f"DEBUG: Google Model Scan Failed: {str(e)}", flush=True)
 
 @app.get("/")
 @app.head("/")
@@ -45,58 +34,57 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(prompt, image_bytes):
-    """Tries multiple names for Google -> OpenRouter -> Groq."""
+    """New Google SDK -> OpenRouter -> Groq."""
     
-    # 1. Try Google Gemini (Trying the 3 most likely names)
-    gemini_names = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro"]
+    # 1. Try Google Gemini (Using the NEW google-genai library)
     if google_keys:
-        for _ in range(len(google_keys)):
+        for i in range(len(google_keys)):
             current_key = next(key_iterator)
-            genai.configure(api_key=current_key)
-            for g_name in gemini_names:
-                try:
-                    print(f"DEBUG: Trying Google Key with {g_name}...", flush=True)
-                    model = genai.GenerativeModel(g_name)
-                    img = Image.open(io.BytesIO(image_bytes))
-                    response = model.generate_content([prompt, img])
-                    print(f"DEBUG: SUCCESS with {g_name}", flush=True)
-                    return clean_ai_text(response.text)
-                except Exception as e:
-                    print(f"DEBUG: Google {g_name} failed: {str(e)}", flush=True)
-                    continue
+            try:
+                print(f"DEBUG: Trying Google Key #{i+1} with gemini-1.5-flash...", flush=True)
+                client = genai.Client(api_key=current_key)
+                img = Image.open(io.BytesIO(image_bytes))
+                
+                response = client.models.generate_content(
+                    model='gemini-1.5-flash',
+                    contents=[prompt, img]
+                )
+                
+                print(f"DEBUG: Google Key #{i+1} SUCCESS", flush=True)
+                return clean_ai_text(response.text)
+            except Exception as e:
+                print(f"DEBUG: Google Key #{i+1} FAILED: {str(e)}", flush=True)
+                continue
 
-    # 2. Try OpenRouter (Using the current free vision slug)
+    # 2. Try OpenRouter (Using the newest free vision model)
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
-        # This is the most common free vision slug on OpenRouter
-        or_models = ["google/gemini-2.0-flash-exp:free", "google/gemini-flash-1.5-exp:free"]
-        base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        for or_m in or_models:
-            try:
-                print(f"DEBUG: Trying OpenRouter with {or_m}...", flush=True)
-                llm = ChatOpenAI(model=or_m, api_key=openrouter_key, base_url="https://openrouter.ai/api/v1")
-                msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-                response = llm.invoke([msg])
-                print(f"DEBUG: OpenRouter SUCCESS with {or_m}", flush=True)
-                return clean_ai_text(response.content)
-            except Exception as e:
-                print(f"DEBUG: OpenRouter {or_m} FAILED: {str(e)}", flush=True)
+        # Updated to the current working free vision slug
+        or_model = "google/gemini-2.0-flash-lite-preview-02-05:free"
+        try:
+            print(f"DEBUG: Trying OpenRouter with {or_model}...", flush=True)
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+            llm = ChatOpenAI(model=or_model, api_key=openrouter_key, base_url="https://openrouter.ai/api/v1")
+            msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
+            response = llm.invoke([msg])
+            print(f"DEBUG: OpenRouter SUCCESS", flush=True)
+            return clean_ai_text(response.content)
+        except Exception as e:
+            print(f"DEBUG: OpenRouter FAILED: {str(e)}", flush=True)
 
-    # 3. Try Groq (Trying both 11B and 90B versions)
+    # 3. Try Groq (Using the preview model)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        groq_models = ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct"]
-        base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        for gr_m in groq_models:
-            try:
-                print(f"DEBUG: Trying Groq with {gr_m}...", flush=True)
-                llm = ChatGroq(model=gr_m, temperature=0, api_key=groq_key)
-                msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-                response = llm.invoke([msg])
-                print(f"DEBUG: Groq SUCCESS with {gr_m}", flush=True)
-                return clean_ai_text(response.content)
-            except Exception as e:
-                print(f"DEBUG: Groq {gr_m} FAILED: {str(e)}", flush=True)
+        try:
+            print("DEBUG: Trying Groq (llama-3.2-11b-vision-preview)...", flush=True)
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+            llm = ChatGroq(model="llama-3.2-11b-vision-preview", temperature=0, api_key=groq_key)
+            msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
+            response = llm.invoke([msg])
+            print("DEBUG: Groq SUCCESS", flush=True)
+            return clean_ai_text(response.content)
+        except Exception as e:
+            print(f"DEBUG: Groq FAILED: {str(e)}", flush=True)
 
     return "Network error. Please contact Zubair for support."
 
@@ -107,8 +95,7 @@ async def analyze_scene(image: UploadFile = File(...)):
         prompt = "Describe the scene for a blind person. Be conversational and warn of hazards."
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
-    except Exception as e:
-        print(f"DEBUG: Analyze Scene Error: {str(e)}", flush=True)
+    except Exception:
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/ask-vision")
@@ -118,8 +105,7 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
         prompt = f"The user asks: {question}. Tell them where the object is or guide them."
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
-    except Exception as e:
-        print(f"DEBUG: Ask Vision Error: {str(e)}", flush=True)
+    except Exception:
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/navigate")
@@ -129,8 +115,7 @@ async def navigate(image: UploadFile = File(...)):
         prompt = "Walking guide: 1 short sentence about what is directly ahead and distance."
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
-    except Exception as e:
-        print(f"DEBUG: Navigate Error: {str(e)}", flush=True)
+    except Exception:
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 if __name__ == "__main__":
