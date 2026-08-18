@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage
 from PIL import Image
 import io
 
-print("DEBUG: SERVER STARTING - BULLETPROOF EDITION", flush=True)
+print("DEBUG: SERVER STARTING - BULLETPROOF EDITION V2", flush=True)
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
@@ -35,14 +35,18 @@ def clean_ai_text(raw_text):
 def call_vision_model(prompt, image_bytes):
     """Bulletproof Router: Tries multiple models per provider automatically."""
     
-    # Get models from Environment Variables (with safe, currently active defaults)
-    env_g_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
-    env_or_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-lite-preview-02-05:free")
-    env_groq_model = os.getenv("GROQ_MODEL", "llama-3.2-90b-vision-preview") # 11b was decommissioned!
+    # Get models from Environment Variables (This is how you update without coding!)
+    env_g_model = os.getenv("GOOGLE_MODEL", "")
+    env_or_model = os.getenv("OPENROUTER_MODEL", "")
+    env_groq_model = os.getenv("GROQ_MODEL", "")
 
-    # 1. Try Google Gemini (Tries Env Var, then 2.0, then 1.5)
+    # 1. Try Google Gemini
     if google_keys:
-        google_models_to_try = [env_g_model, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+        # We added gemini-3.6-flash because the logs explicitly asked for it!
+        # We also use -latest tags which are supposed to auto-update and never 404.
+        google_models_to_try = ['gemini-3.6-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest']
+        if env_g_model:
+            google_models_to_try.insert(0, env_g_model) # Put Render Env Var first
         
         for i in range(len(google_keys)):
             current_key = next(key_iterator)
@@ -58,12 +62,15 @@ def call_vision_model(prompt, image_bytes):
                     return clean_ai_text(response.text)
                 except Exception as e:
                     print(f"DEBUG: Google {g_model} FAILED: {str(e)}", flush=True)
-                    continue # Try the next Google model in the list
+                    continue
 
-    # 2. Try OpenRouter (Tries Env Var, then Gemini Lite Free, then Qwen Free)
+    # 2. Try OpenRouter
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
-        or_models_to_try = [env_or_model, "google/gemini-2.0-flash-lite-preview-02-05:free", "qwen/qwen-vl-plus:free"]
+        # Updated to the most stable current free vision models on OpenRouter
+        or_models_to_try = ["meta-llama/llama-3.2-11b-vision-instruct:free", "qwen/qwen-2-vl-72b-instruct:free"]
+        if env_or_model:
+            or_models_to_try.insert(0, env_or_model)
         
         for or_model in or_models_to_try:
             try:
@@ -76,21 +83,28 @@ def call_vision_model(prompt, image_bytes):
                 return clean_ai_text(response.content)
             except Exception as e:
                 print(f"DEBUG: OpenRouter {or_model} FAILED: {str(e)}", flush=True)
-                continue # Try the next OpenRouter model in the list
+                continue
 
-    # 3. Try Groq (Using the 90b model since 11b is dead)
+    # 3. Try Groq
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        try:
-            print(f"DEBUG: Trying Groq with {env_groq_model}...", flush=True)
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            llm = ChatGroq(model=env_groq_model, temperature=0, api_key=groq_key)
-            msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-            response = llm.invoke([msg])
-            print(f"DEBUG: Groq SUCCESS", flush=True)
-            return clean_ai_text(response.content)
-        except Exception as e:
-            print(f"DEBUG: Groq FAILED: {str(e)}", flush=True)
+        # Groq deleted 'preview', so we use the official 'instruct' names
+        groq_models_to_try = ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct"]
+        if env_groq_model:
+            groq_models_to_try.insert(0, env_groq_model)
+
+        for groq_model in groq_models_to_try:
+            try:
+                print(f"DEBUG: Trying Groq with {groq_model}...", flush=True)
+                base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                llm = ChatGroq(model=groq_model, temperature=0, api_key=groq_key)
+                msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
+                response = llm.invoke([msg])
+                print(f"DEBUG: Groq SUCCESS with {groq_model}", flush=True)
+                return clean_ai_text(response.content)
+            except Exception as e:
+                print(f"DEBUG: Groq {groq_model} FAILED: {str(e)}", flush=True)
+                continue
 
     return "Network error. Please contact Zubair for support."
 
