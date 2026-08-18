@@ -5,3 +5,5 @@ langchain-groq
 Pillow
 python-dotenv
 langchain-google-genai
+langchain-openai
+
