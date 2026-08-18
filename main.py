@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage
 from PIL import Image
 import io
 
-print("DEBUG: SERVER STARTING - BULLETPROOF EDITION V3", flush=True)
+print("DEBUG: SERVER STARTING - BULLETPROOF EDITION V4 (WITH HUGGING FACE)", flush=True)
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
@@ -38,10 +38,10 @@ def call_vision_model(prompt, image_bytes):
     env_g_model = os.getenv("GOOGLE_MODEL", "")
     env_or_model = os.getenv("OPENROUTER_MODEL", "")
     env_groq_model = os.getenv("GROQ_MODEL", "")
+    env_hf_model = os.getenv("HUGGINGFACE_MODEL", "")
 
     # 1. Try Google Gemini
     if google_keys:
-        # Updated to the absolute latest from the new docs (3.7, 3.6, 3.5, 2.5)
         google_models_to_try = [
             'gemini-3.7-flash', 
             'gemini-3.6-flash', 
@@ -91,7 +91,6 @@ def call_vision_model(prompt, image_bytes):
     # 3. Try Groq
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        # Updated to Llama 4 Scout based on Groq deprecation docs for Llama 3.2 Vision
         groq_models_to_try = ["meta-llama/llama-4-scout-17b-16e-instruct"]
         if env_groq_model:
             groq_models_to_try.insert(0, env_groq_model)
@@ -107,6 +106,27 @@ def call_vision_model(prompt, image_bytes):
                 return clean_ai_text(response.content)
             except Exception as e:
                 print(f"DEBUG: Groq {groq_model} FAILED: {str(e)}", flush=True)
+                continue
+
+    # 4. Try Hugging Face (NEW 4th Layer of Redundancy)
+    hf_key = os.getenv("HUGGINGFACE_API_KEY")
+    if hf_key:
+        hf_models_to_try = ["meta-llama/Llama-3.2-11B-Vision-Instruct", "Qwen/Qwen2-VL-7B-Instruct"]
+        if env_hf_model:
+            hf_models_to_try.insert(0, env_hf_model)
+
+        for hf_model in hf_models_to_try:
+            try:
+                print(f"DEBUG: Trying Hugging Face with {hf_model}...", flush=True)
+                base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                # Pointing ChatOpenAI to Hugging Face's API endpoint
+                llm = ChatOpenAI(model=hf_model, api_key=hf_key, base_url="https://api-inference.huggingface.co/v1/")
+                msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
+                response = llm.invoke([msg])
+                print(f"DEBUG: Hugging Face SUCCESS with {hf_model}", flush=True)
+                return clean_ai_text(response.content)
+            except Exception as e:
+                print(f"DEBUG: Hugging Face {hf_model} FAILED: {str(e)}", flush=True)
                 continue
 
     return "Network error. Please contact Zubair for support."
