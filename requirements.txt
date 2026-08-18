@@ -6,4 +6,5 @@ Pillow
 python-dotenv
 langchain-google-genai
 langchain-openai
+google-generativeai
 
