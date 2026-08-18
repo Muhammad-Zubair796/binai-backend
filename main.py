@@ -6,6 +6,7 @@ import itertools
 from fastapi import FastAPI, UploadFile, File, Form
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 app = FastAPI(title="binAI Human Assistant Backend")
@@ -28,26 +29,41 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(msg, fast_mode=False):
-    """Tries 4 Google keys -> Groq."""
+    """Tries 4 Google keys -> OpenRouter -> Groq."""
     
-    # 1. Try Google Gemini (Fixed model name)
+    # 1. Try Google Gemini (Fixed Model Name)
     if google_keys:
         for i in range(len(google_keys)):
             current_key = next(key_iterator)
             try:
-                # Changed to gemini-1.5-flash
+                print(f"DEBUG: Trying Google Key #{i+1}")
                 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, api_key=current_key)
                 response = llm.invoke([msg])
                 return clean_ai_text(response.content)
             except Exception as e:
-                print(f"DEBUG: Google Key #{i+1} Failed: {str(e)}")
+                print(f"DEBUG: Google Failed: {str(e)}")
                 continue
 
-    # 2. Try Groq (Fixed model name to preview)
+    # 2. Try OpenRouter (Free Gemini 2.0)
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    if openrouter_key:
+        try:
+            print("DEBUG: Trying OpenRouter Free Model")
+            llm = ChatOpenAI(
+                model="google/gemini-2.0-flash-exp:free", 
+                api_key=openrouter_key, 
+                base_url="https://openrouter.ai/api/v1"
+            )
+            response = llm.invoke([msg])
+            return clean_ai_text(response.content)
+        except Exception as e:
+            print(f"DEBUG: OpenRouter Failed: {str(e)}")
+
+    # 3. Try Groq (Fixed Model Name)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:
-            # Changed to llama-3.2-11b-vision-preview
+            print("DEBUG: Trying Groq")
             llm = ChatGroq(model="llama-3.2-11b-vision-preview", temperature=0, api_key=groq_key)
             response = llm.invoke([msg])
             return clean_ai_text(response.content)
