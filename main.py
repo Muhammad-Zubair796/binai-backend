@@ -6,12 +6,13 @@ import itertools
 from fastapi import FastAPI, UploadFile, File, Form
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
 # ==========================================
-# 4-KEY API ROTATOR (Fixed for 4 Keys)
+# 4-KEY API ROTATOR
 # ==========================================
 google_keys_env = os.getenv("GOOGLE_API_KEYS", "")
 google_keys = [k.strip() for k in google_keys_env.split(",") if k.strip()]
@@ -28,9 +29,10 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(msg, fast_mode=False):
-    """Tries all 4 Google keys before falling back to Groq."""
+    """Tries 4 Google keys -> SambaNova -> Groq."""
     last_error = "Unknown error"
     
+    # 1. Try Google Gemini (Rotates through your 4 keys)
     if google_keys:
         for _ in range(len(google_keys)):
             current_key = next(key_iterator)
@@ -42,14 +44,27 @@ def call_vision_model(msg, fast_mode=False):
                 last_error = str(e)
                 continue
 
-    try:
-        llm = ChatGroq(model="llama-3.2-11b-vision-instruct", temperature=0, api_key=os.getenv("GROQ_API_KEY"))
-        response = llm.invoke([msg])
-        return clean_ai_text(response.content)
-    except Exception as e:
-        last_error = str(e)
+    # 2. Try SambaNova (Llama 3.2 Vision - Free)
+    sambanova_key = os.getenv("SAMBANOVA_API_KEY")
+    if sambanova_key:
+        try:
+            llm = ChatOpenAI(model="Llama-3.2-11B-Vision-Instruct", api_key=sambanova_key, base_url="https://api.sambanova.ai/v1")
+            response = llm.invoke([msg])
+            return clean_ai_text(response.content)
+        except Exception as e:
+            last_error = str(e)
 
-    return "System overloaded. Please try again in a moment."
+    # 3. Try Groq (Final Fallback)
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key:
+        try:
+            llm = ChatGroq(model="llama-3.2-11b-vision-instruct", temperature=0, api_key=groq_key)
+            response = llm.invoke([msg])
+            return clean_ai_text(response.content)
+        except Exception as e:
+            last_error = str(e)
+
+    return "All AI systems are currently busy. Please try again in 10 seconds."
 
 @app.post("/analyze-scene")
 async def analyze_scene(image: UploadFile = File(...)):
