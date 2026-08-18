@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 from PIL import Image
 import io
 
-print("DEBUG: SERVER STARTING WITH NEW SDK...", flush=True)
+print("DEBUG: SERVER STARTING...", flush=True)
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
@@ -22,6 +22,17 @@ app = FastAPI(title="binAI Human Assistant Backend")
 google_keys_env = os.getenv("GOOGLE_API_KEYS", "")
 google_keys = [k.strip() for k in google_keys_env.split(",") if k.strip()]
 key_iterator = itertools.cycle(google_keys) if google_keys else None
+
+# YOUR IDEA: Scan and list all working models
+if google_keys:
+    try:
+        print(f"DEBUG: Scanning working models for your Key...", flush=True)
+        temp_client = genai.Client(api_key=google_keys[0])
+        for m in temp_client.models.list():
+            # This prints the EXACT names Google wants us to use
+            print(f"DEBUG: WORKING GOOGLE MODEL: {m.name}", flush=True)
+    except Exception as e:
+        print(f"DEBUG: Scanner Failed: {str(e)}", flush=True)
 
 @app.get("/")
 @app.head("/")
@@ -34,33 +45,34 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(prompt, image_bytes):
-    """New Google SDK -> OpenRouter -> Groq."""
+    """New SDK -> OpenRouter -> Groq."""
     
-    # 1. Try Google Gemini (Using the NEW google-genai library)
+    # 1. Try Google Gemini (Using the NEW SDK to fix 404/v1beta)
     if google_keys:
         for i in range(len(google_keys)):
             current_key = next(key_iterator)
-            try:
-                print(f"DEBUG: Trying Google Key #{i+1} with gemini-1.5-flash...", flush=True)
-                client = genai.Client(api_key=current_key)
-                img = Image.open(io.BytesIO(image_bytes))
-                
-                response = client.models.generate_content(
-                    model='gemini-1.5-flash',
-                    contents=[prompt, img]
-                )
-                
-                print(f"DEBUG: Google Key #{i+1} SUCCESS", flush=True)
-                return clean_ai_text(response.text)
-            except Exception as e:
-                print(f"DEBUG: Google Key #{i+1} FAILED: {str(e)}", flush=True)
-                continue
+            # We try the two most common names
+            for g_model in ['gemini-1.5-flash', 'gemini-2.0-flash']:
+                try:
+                    print(f"DEBUG: Trying Google Key #{i+1} with {g_model}...", flush=True)
+                    client = genai.Client(api_key=current_key)
+                    img = Image.open(io.BytesIO(image_bytes))
+                    
+                    response = client.models.generate_content(
+                        model=g_model,
+                        contents=[prompt, img]
+                    )
+                    print(f"DEBUG: Google SUCCESS with {g_model}", flush=True)
+                    return clean_ai_text(response.text)
+                except Exception as e:
+                    print(f"DEBUG: Google {g_model} FAILED: {str(e)}", flush=True)
+                    continue
 
-    # 2. Try OpenRouter (Using the newest free vision model)
+    # 2. Try OpenRouter (Using the current stable free vision model)
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
         # Updated to the current working free vision slug
-        or_model = "google/gemini-2.0-flash-lite-preview-02-05:free"
+        or_model = "google/gemini-2.0-flash-001"
         try:
             print(f"DEBUG: Trying OpenRouter with {or_model}...", flush=True)
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
@@ -72,16 +84,16 @@ def call_vision_model(prompt, image_bytes):
         except Exception as e:
             print(f"DEBUG: OpenRouter FAILED: {str(e)}", flush=True)
 
-    # 3. Try Groq (Using the preview model)
+    # 3. Try Groq (Using the new Instruct model)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:
-            print("DEBUG: Trying Groq (llama-3.2-11b-vision-preview)...", flush=True)
+            print("DEBUG: Trying Groq (llama-3.2-11b-vision-instruct)...", flush=True)
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            llm = ChatGroq(model="llama-3.2-11b-vision-preview", temperature=0, api_key=groq_key)
+            llm = ChatGroq(model="llama-3.2-11b-vision-instruct", temperature=0, api_key=groq_key)
             msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
             response = llm.invoke([msg])
-            print("DEBUG: Groq SUCCESS", flush=True)
+            print(f"DEBUG: Groq SUCCESS", flush=True)
             return clean_ai_text(response.content)
         except Exception as e:
             print(f"DEBUG: Groq FAILED: {str(e)}", flush=True)
