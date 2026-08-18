@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 app = FastAPI(title="binAI Human Assistant Backend")
 
 # ==========================================
-# 4-KEY API ROTATOR
+# API KEY ROTATOR
 # ==========================================
 google_keys_env = os.getenv("GOOGLE_API_KEYS", "")
 google_keys = [k.strip() for k in google_keys_env.split(",") if k.strip()]
@@ -30,7 +30,6 @@ def clean_ai_text(raw_text):
 
 def call_vision_model(msg, fast_mode=False):
     """Tries 4 Google keys -> SambaNova -> Groq."""
-    last_error = "Unknown error"
     
     # 1. Try Google Gemini (Rotates through your 4 keys)
     if google_keys:
@@ -41,10 +40,10 @@ def call_vision_model(msg, fast_mode=False):
                 response = llm.invoke([msg])
                 return clean_ai_text(response.content)
             except Exception as e:
-                last_error = str(e)
+                print(f"Google Key Error: {str(e)}")
                 continue
 
-    # 2. Try SambaNova (Llama 3.2 Vision - Free)
+    # 2. Try SambaNova (Llama 3.2 Vision)
     sambanova_key = os.getenv("SAMBANOVA_API_KEY")
     if sambanova_key:
         try:
@@ -52,7 +51,7 @@ def call_vision_model(msg, fast_mode=False):
             response = llm.invoke([msg])
             return clean_ai_text(response.content)
         except Exception as e:
-            last_error = str(e)
+            print(f"SambaNova Error: {str(e)}")
 
     # 3. Try Groq (Final Fallback)
     groq_key = os.getenv("GROQ_API_KEY")
@@ -62,9 +61,10 @@ def call_vision_model(msg, fast_mode=False):
             response = llm.invoke([msg])
             return clean_ai_text(response.content)
         except Exception as e:
-            last_error = str(e)
+            print(f"Groq Error: {str(e)}")
 
-    return "All AI systems are currently busy. Please try again in 10 seconds."
+    # RESTORED YOUR EXACT MESSAGE
+    return "Network error. Please contact Zubair for support."
 
 @app.post("/analyze-scene")
 async def analyze_scene(image: UploadFile = File(...)):
@@ -78,7 +78,7 @@ async def analyze_scene(image: UploadFile = File(...)):
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/ask-vision")
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
@@ -92,7 +92,7 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/navigate")
 async def navigate(image: UploadFile = File(...)):
@@ -106,7 +106,7 @@ async def navigate(image: UploadFile = File(...)):
         if os.path.exists(temp_path): os.remove(temp_path)
         return {"status": "success", "script": result}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 if __name__ == "__main__":
     import uvicorn
