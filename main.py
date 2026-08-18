@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage
 from PIL import Image
 import io
 
-print("DEBUG: SERVER STARTING - NUCLEAR OPTION", flush=True)
+print("DEBUG: SERVER STARTING - BULLETPROOF EDITION", flush=True)
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
@@ -33,15 +33,22 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(prompt, image_bytes):
-    """Tries Google -> OpenRouter (Mistral) -> Groq."""
+    """Bulletproof Router: Tries multiple models per provider automatically."""
     
-    # 1. Try Google Gemini (Using the most stable IDs)
+    # Get models from Environment Variables (with safe, currently active defaults)
+    env_g_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
+    env_or_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-lite-preview-02-05:free")
+    env_groq_model = os.getenv("GROQ_MODEL", "llama-3.2-90b-vision-preview") # 11b was decommissioned!
+
+    # 1. Try Google Gemini (Tries Env Var, then 2.0, then 1.5)
     if google_keys:
+        google_models_to_try = [env_g_model, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+        
         for i in range(len(google_keys)):
             current_key = next(key_iterator)
             genai.configure(api_key=current_key)
-            # We try Flash and then Flash-8B
-            for g_model in ['gemini-1.5-flash', 'gemini-1.5-flash-8b']:
+            
+            for g_model in google_models_to_try:
                 try:
                     print(f"DEBUG: Trying Google Key #{i+1} with {g_model}...", flush=True)
                     model = genai.GenerativeModel(g_model)
@@ -51,31 +58,33 @@ def call_vision_model(prompt, image_bytes):
                     return clean_ai_text(response.text)
                 except Exception as e:
                     print(f"DEBUG: Google {g_model} FAILED: {str(e)}", flush=True)
-                    continue
+                    continue # Try the next Google model in the list
 
-    # 2. Try OpenRouter (Using Mistral Pixtral - Very stable free vision)
+    # 2. Try OpenRouter (Tries Env Var, then Gemini Lite Free, then Qwen Free)
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
-        # Mistral Pixtral is a great alternative to Gemini
-        or_model = "mistralai/pixtral-12b:free"
-        try:
-            print(f"DEBUG: Trying OpenRouter with {or_model}...", flush=True)
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            llm = ChatOpenAI(model=or_model, api_key=openrouter_key, base_url="https://openrouter.ai/api/v1")
-            msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
-            response = llm.invoke([msg])
-            print(f"DEBUG: OpenRouter SUCCESS", flush=True)
-            return clean_ai_text(response.content)
-        except Exception as e:
-            print(f"DEBUG: OpenRouter FAILED: {str(e)}", flush=True)
+        or_models_to_try = [env_or_model, "google/gemini-2.0-flash-lite-preview-02-05:free", "qwen/qwen-vl-plus:free"]
+        
+        for or_model in or_models_to_try:
+            try:
+                print(f"DEBUG: Trying OpenRouter with {or_model}...", flush=True)
+                base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                llm = ChatOpenAI(model=or_model, api_key=openrouter_key, base_url="https://openrouter.ai/api/v1")
+                msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
+                response = llm.invoke([msg])
+                print(f"DEBUG: OpenRouter SUCCESS with {or_model}", flush=True)
+                return clean_ai_text(response.content)
+            except Exception as e:
+                print(f"DEBUG: OpenRouter {or_model} FAILED: {str(e)}", flush=True)
+                continue # Try the next OpenRouter model in the list
 
-    # 3. Try Groq (Using the Preview model which is currently active)
+    # 3. Try Groq (Using the 90b model since 11b is dead)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:
-            print("DEBUG: Trying Groq (llama-3.2-11b-vision-preview)...", flush=True)
+            print(f"DEBUG: Trying Groq with {env_groq_model}...", flush=True)
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            llm = ChatGroq(model="llama-3.2-11b-vision-preview", temperature=0, api_key=groq_key)
+            llm = ChatGroq(model=env_groq_model, temperature=0, api_key=groq_key)
             msg = HumanMessage(content=[{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}])
             response = llm.invoke([msg])
             print(f"DEBUG: Groq SUCCESS", flush=True)
