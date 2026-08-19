@@ -127,10 +127,11 @@ def call_vision_model(prompt, image_bytes):
                 print(f"DEBUG: Groq {groq_model} FAILED: {str(e)}", flush=True)
                 continue
 
-    # 4. Try Hugging Face
+        # 4. Try Hugging Face
     hf_key = os.getenv("HUGGINGFACE_API_KEY")
     if hf_key:
-        hf_models_to_try = ["meta-llama/Llama-3.2-11B-Vision-Instruct", "Qwen/Qwen2-VL-7B-Instruct"]
+        # UPDATED: Using the upgraded Qwen 2.5 architecture
+        hf_models_to_try = ["Qwen/Qwen2.5-VL-7B-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct"]
         if env_hf_model:
             hf_models_to_try.insert(0, env_hf_model)
 
@@ -138,10 +139,10 @@ def call_vision_model(prompt, image_bytes):
             try:
                 print(f"DEBUG: Trying Hugging Face with {hf_model}...", flush=True)
                 llm = ChatOpenAI(
-                    model=hf_model, 
+                    model="tgi", # REQUIRED: Set to "tgi" when using HF serverless endpoints
                     api_key=hf_key, 
-                    base_url="https://api-inference.huggingface.co/v1/",
-                    timeout=10 # ADDED: Fail fast
+                    base_url=f"https://huggingface.co{hf_model}", # FIXED: Dynamic model routing
+                    timeout=10 
                 )
                 response = llm.invoke([langchain_msg])
                 print(f"DEBUG: Hugging Face SUCCESS with {hf_model}", flush=True)
@@ -149,6 +150,7 @@ def call_vision_model(prompt, image_bytes):
             except Exception as e:
                 print(f"DEBUG: Hugging Face {hf_model} FAILED: {str(e)}", flush=True)
                 continue
+
 
     return "Network error. Please contact Zubair for support."
 
