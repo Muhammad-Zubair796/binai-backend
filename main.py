@@ -82,8 +82,19 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
 async def navigate(image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
-        prompt = "Walking guide: 1 short sentence about what is directly ahead and distance."
+        # NEW AGGRESSIVE PROMPT FOR WALK MODE
+        prompt = """
+        You are a bodyguard guiding a blind person walking forward. 
+        Look at the image. 
+        1. If there is a wall, obstacle, person, or drop-off VERY CLOSE directly ahead, you MUST reply starting with the word "STOP!" followed by what it is (e.g., "STOP! Wall right in front of you!").
+        2. If there is an obstacle slightly further away, warn them briefly (e.g., "Desk 3 feet ahead").
+        3. If the path is clear, reply with exactly two words: "Path clear."
+        Do not be polite. Be urgent, short, and direct.
+        """
         result = call_vision_model(prompt, image_bytes)
+        
+        # If the AI says "Path clear", we can optionally silence it so it doesn't annoy the user, 
+        # or just let it say "Path clear". We will let it speak so the user knows it's working.
         return {"status": "success", "script": result}
     except Exception as e:
         print(f"DEBUG: Endpoint Error: {str(e)}", flush=True)
