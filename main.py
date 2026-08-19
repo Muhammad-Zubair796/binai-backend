@@ -48,6 +48,7 @@ def call_vision_model(prompt, image_bytes):
 
     # 1. Try Google Gemini
     if google_keys:
+        # RESTORED: Your 2026 models
         google_models_to_try = [
             'gemini-3.7-flash', 
             'gemini-3.6-flash', 
@@ -68,6 +69,7 @@ def call_vision_model(prompt, image_bytes):
                     model = genai.GenerativeModel(g_model)
                     img = Image.open(io.BytesIO(image_bytes))
                     
+                    # ADDED: Timeout so it fails fast if Google is hanging
                     response = model.generate_content(
                         [prompt, img],
                         request_options={"timeout": 10} 
@@ -92,7 +94,7 @@ def call_vision_model(prompt, image_bytes):
                     model=or_model, 
                     api_key=openrouter_key, 
                     base_url="https://openrouter.ai/api/v1",
-                    timeout=10 
+                    timeout=10 # ADDED: Fail fast
                 )
                 response = llm.invoke([langchain_msg])
                 print(f"DEBUG: OpenRouter SUCCESS with {or_model}", flush=True)
@@ -104,6 +106,7 @@ def call_vision_model(prompt, image_bytes):
     # 3. Try Groq
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
+        # RESTORED: Your Llama 4 model
         groq_models_to_try = ["meta-llama/llama-4-scout-17b-16e-instruct"]
         if env_groq_model:
             groq_models_to_try.insert(0, env_groq_model)
@@ -115,7 +118,7 @@ def call_vision_model(prompt, image_bytes):
                     model=groq_model, 
                     temperature=0, 
                     api_key=groq_key,
-                    timeout=10 
+                    timeout=10 # ADDED: Fail fast
                 )
                 response = llm.invoke([langchain_msg])
                 print(f"DEBUG: Groq SUCCESS with {groq_model}", flush=True)
@@ -124,10 +127,10 @@ def call_vision_model(prompt, image_bytes):
                 print(f"DEBUG: Groq {groq_model} FAILED: {str(e)}", flush=True)
                 continue
 
-    # 4. Try Hugging Face (FIXED INDENTATION ALIGNMENT)
+    # 4. Try Hugging Face
     hf_key = os.getenv("HUGGINGFACE_API_KEY")
     if hf_key:
-        hf_models_to_try = ["Qwen/Qwen2.5-VL-7B-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct"]
+        hf_models_to_try = ["meta-llama/Llama-3.2-11B-Vision-Instruct", "Qwen/Qwen2-VL-7B-Instruct"]
         if env_hf_model:
             hf_models_to_try.insert(0, env_hf_model)
 
@@ -135,11 +138,10 @@ def call_vision_model(prompt, image_bytes):
             try:
                 print(f"DEBUG: Trying Hugging Face with {hf_model}...", flush=True)
                 llm = ChatOpenAI(
-                    model="tgi", 
+                    model=hf_model, 
                     api_key=hf_key, 
-                    # FIXED API URL FOR HUGGING FACE INFERENCE GATEWAY
-                    base_url=f"https://huggingface.co{hf_model}", 
-                    timeout=10 
+                    base_url="https://api-inference.huggingface.co/v1/",
+                    timeout=10 # ADDED: Fail fast
                 )
                 response = llm.invoke([langchain_msg])
                 print(f"DEBUG: Hugging Face SUCCESS with {hf_model}", flush=True)
