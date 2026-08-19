@@ -36,11 +36,14 @@ def call_vision_model(prompt, image_bytes):
         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
     ])
 
-    # 1. Try Google Vertex AI (Using your $300 Free Credits!)
+    # 1. Try Google Vertex AI (Primary)
+    # Added 2.0 and 1.5 as safety nets just in case 3.x isn't available in your region yet
     google_models_to_try = [
         'gemini-3.7-flash', 
         'gemini-3.6-flash',
-        'gemini-3.5-flash'
+        'gemini-3.5-flash',
+        'gemini-2.0-flash-exp',
+        'gemini-1.5-flash-002'
     ]
     
     for g_model in google_models_to_try:
@@ -50,9 +53,9 @@ def call_vision_model(prompt, image_bytes):
             model = GenerativeModel(g_model)
             image_part = Part.from_data(mime_type="image/jpeg", data=image_bytes)
             
+            # FIX: Removed the invalid 'timeout' parameter from generation_config
             response = model.generate_content(
-                [prompt, image_part],
-                generation_config={"timeout": 10} 
+                [prompt, image_part]
             )
             print(f"DEBUG: Google Vertex SUCCESS with {g_model}", flush=True)
             return clean_ai_text(response.text)
@@ -63,11 +66,12 @@ def call_vision_model(prompt, image_bytes):
     # 2. Fallback to Groq
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        groq_models_to_try = ["llama-4-scout-17b-16e-instruct"]
+        # FIX: Changed to a real, existing Groq Vision model
+        groq_models_to_try = ["llama-3.2-11b-vision-preview"]
         for groq_model in groq_models_to_try:
             try:
                 print(f"DEBUG: Trying Groq with {groq_model}...", flush=True)
-                llm = ChatGroq(model=groq_model, temperature=0, api_key=groq_key, timeout=10)
+                llm = ChatGroq(model=groq_model, temperature=0, api_key=groq_key, timeout=15)
                 response = llm.invoke([langchain_msg])
                 print(f"DEBUG: Groq SUCCESS with {groq_model}", flush=True)
                 return clean_ai_text(response.content)
@@ -78,11 +82,12 @@ def call_vision_model(prompt, image_bytes):
     # 3. Fallback to OpenRouter
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
-        or_models_to_try = ["google/gemini-3.7-flash"]
+        # FIX: Changed to a FREE vision model so it doesn't fail due to 0 credits
+        or_models_to_try = ["meta-llama/llama-3.2-11b-vision-instruct:free"]
         for or_model in or_models_to_try:
             try:
                 print(f"DEBUG: Trying OpenRouter with {or_model}...", flush=True)
-                llm = ChatOpenAI(model=or_model, api_key=openrouter_key, base_url="https://openrouter.ai/api/v1", timeout=10)
+                llm = ChatOpenAI(model=or_model, api_key=openrouter_key, base_url="https://openrouter.ai/api/v1", timeout=15)
                 response = llm.invoke([langchain_msg])
                 print(f"DEBUG: OpenRouter SUCCESS with {or_model}", flush=True)
                 return clean_ai_text(response.content)
@@ -100,6 +105,7 @@ async def analyze_scene(image: UploadFile = File(...)):
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
     except Exception as e:
+        print(f"DEBUG: Endpoint Error: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/ask-vision")
@@ -110,6 +116,7 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
     except Exception as e:
+        print(f"DEBUG: Endpoint Error: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/navigate")
@@ -120,6 +127,7 @@ async def navigate(image: UploadFile = File(...)):
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
     except Exception as e:
+        print(f"DEBUG: Endpoint Error: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 if __name__ == "__main__":
