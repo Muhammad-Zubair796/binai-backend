@@ -1,7 +1,4 @@
 fastapi
 uvicorn
 python-multipart
-google-cloud-aiplatform
-langchain-groq
-langchain-openai
-Pillow
+google-cloud-aiplatform>=1.80.0
