@@ -60,14 +60,14 @@ def call_vision_model(prompt, image_bytes):
 async def analyze_scene(image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
-        # PROMPT UPDATE: Structured, hazard-first, concise description.
+        # PROMPT UPDATE: Added distance estimation and clock-face directions.
         prompt = """
-        You are an expert AI visual assistant for a visually impaired user. Analyze this image and provide a clear, concise, and highly useful description.
-        Follow this strict structure:
-        1. Immediate Hazards: Mention any obstacles, drop-offs, or dangers right in front of the user first.
-        2. Main Subject: Describe the primary objects or people in the scene.
-        3. Environment: Briefly state the setting (e.g., 'indoor office', 'busy street').
-        Keep the response under 3 sentences. Be direct, professional, and avoid filler words like 'I can see' or 'The image shows'.
+        You are an expert mobility instructor for a totally blind person. Describe this scene to help them understand their surroundings safely.
+        Structure your response strictly as follows:
+        1. Immediate Hazards: Mention any trip hazards, drop-offs, or head-level obstacles first, estimating distance (e.g., "Trip hazard 2 feet ahead"). If none, skip.
+        2. Scene Overview: Briefly state the environment (e.g., "You are in a busy hallway").
+        3. Key Objects: Mention locations using clock directions and estimated distances (e.g., "Desk 5 feet away at 12 o'clock", "Door at 3 o'clock").
+        Keep it under 3 short sentences. Be highly spatial and precise.
         """
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
@@ -79,13 +79,13 @@ async def analyze_scene(image: UploadFile = File(...)):
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
     try:
         image_bytes = await image.read()
-        # PROMPT UPDATE: Forces spatial awareness and strict fallback if not found.
+        # PROMPT UPDATE: Forces exact distance and directional guidance.
         prompt = f"""
-        You are an expert AI visual assistant for a visually impaired user. The user is asking: "{question}"
+        You are an expert visual assistant for a blind person. The user asks: "{question}"
         Look at the image and answer directly. 
-        - If the object is present, describe its exact location using relative directions (e.g., 'in the center', 'slightly to your left', 'on the table in front of you').
+        - If the object is present, give its exact location using estimated distance and directions (e.g., "It is about 3 feet away, slightly to your left on the table").
         - If the object is NOT in the image, clearly state: "I do not see that in the current view."
-        - Keep your answer concise, accurate, and highly practical for someone who cannot see. Do not use filler words.
+        - Keep your answer under 2 sentences. Be precise, spatial, and highly practical.
         """
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
@@ -97,19 +97,18 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
 async def navigate(image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
-        # PROMPT UPDATE: Ultra-fast, safety-critical radar mode for 2-second intervals.
+        # PROMPT UPDATE: Ultra-short, military-style radar. Forces distance and evasion commands.
         prompt = """
-        You are a highly critical safety radar for a blind person walking forward. Analyze the immediate path ahead (the center of the image).
-        Rules for your response:
-        1. CRITICAL DANGER: If there is a wall, vehicle, person, stairs, or obstacle VERY CLOSE directly in the path, reply starting with "STOP!" followed by a 2-3 word description (e.g., "STOP! Wall ahead", "STOP! Stairs going down").
-        2. UPCOMING OBSTACLE: If there is an obstacle in the path but slightly further away, give a short warning (e.g., "Chair ahead on the right", "Person approaching").
-        3. CLEAR PATH: If the immediate walking path is completely clear of obstacles, reply with exactly: "Path clear."
-        Do not be conversational. Be urgent, extremely brief, and prioritize physical safety above all else.
+        You are a real-time mobility radar for a blind person walking forward. Analyze the immediate path ahead.
+        You MUST provide a highly urgent, ultra-short response (MAXIMUM 6 WORDS) to prevent injury.
+        Rules:
+        1. CRITICAL DANGER (Stairs, drop-offs, moving cars): Start with "STOP!" followed by the danger (e.g., "STOP! Stairs going down", "STOP! Car approaching").
+        2. BLOCKED PATH: State the object, estimated distance, and an evasion command (e.g., "Wall 3 feet, move right", "Person 2 steps, shift left", "Pole 1 foot, step right").
+        3. CLEAR PATH: If the immediate walking path is completely clear for at least 10 feet, reply exactly: "Path clear."
+        Do NOT use full sentences. Do NOT be polite. Prioritize distance (feet/steps) and directional commands (left/right).
         """
         result = call_vision_model(prompt, image_bytes)
         
-        # If the AI says "Path clear", we can optionally silence it so it doesn't annoy the user, 
-        # or just let it say "Path clear". We will let it speak so the user knows it's working.
         return {"status": "success", "script": result}
     except Exception as e:
         print(f"DEBUG: Endpoint Error: {str(e)}", flush=True)
