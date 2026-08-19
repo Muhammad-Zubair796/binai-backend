@@ -34,9 +34,8 @@ def clean_ai_text(raw_text):
 def call_vision_model(prompt, image_bytes):
     # Updated to the active 2026 models based on official docs
     google_models_to_try = [
-        'gemini-3.5-flash',       # Stable 12-month model
-        'gemini-3.1-flash-lite',  # Fast, cheap fallback
-        'gemini-2.5-flash'        # Older stable fallback (retires Oct 2026)
+        'gemini-2.5-flash',
+        'gemini-2.5-pro'
     ]
     
     for g_model in google_models_to_try:
