@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 python-multipart
-google-generativeai
+google-cloud-aiplatform
 langchain-groq
 langchain-openai
 Pillow
