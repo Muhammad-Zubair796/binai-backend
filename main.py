@@ -4,25 +4,27 @@ import re
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 from fastapi import FastAPI, UploadFile, File, Form
-from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
 
-print("DEBUG: SERVER STARTING - ENTERPRISE PAY-AS-YOU-GO EDITION", flush=True)
+print("DEBUG: SERVER STARTING - GOOGLE VERTEX AI (2026 MODELS)", flush=True)
 
 app = FastAPI(title="binAI Human Assistant Backend")
 
 # ==========================================
 # INITIALIZE GOOGLE CLOUD VERTEX AI
 # ==========================================
-# IMPORTANT: Replace with your actual Project ID from Google Cloud
 PROJECT_ID = "project-3160f2ec-9f07-4d03-a9e" 
-vertexai.init(project=PROJECT_ID, location="us-central1")
+REGION = "us-central1"
+
+try:
+    vertexai.init(project=PROJECT_ID, location=REGION)
+    print("DEBUG: Vertex AI Initialized Successfully", flush=True)
+except Exception as e:
+    print(f"DEBUG: Failed to initialize Vertex AI: {e}", flush=True)
 
 @app.get("/")
 @app.head("/")
 async def health_check():
-    return {"status": "alive", "message": "binAI Human Assistant is running on Enterprise Tier!"}
+    return {"status": "alive", "message": "binAI Backend is running on Vertex AI!"}
 
 def clean_ai_text(raw_text):
     clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
@@ -30,20 +32,11 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(prompt, image_bytes):
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    langchain_msg = HumanMessage(content=[
-        {"type": "text", "text": prompt},
-        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-    ])
-
-    # 1. Try Google Vertex AI (Primary)
-    # Added 2.0 and 1.5 as safety nets just in case 3.x isn't available in your region yet
+    # Updated to the active 2026 models based on official docs
     google_models_to_try = [
-        'gemini-3.7-flash', 
-        'gemini-3.6-flash',
-        'gemini-3.5-flash',
-        'gemini-2.0-flash-exp',
-        'gemini-1.5-flash-002'
+        'gemini-3.5-flash',       # Stable 12-month model
+        'gemini-3.1-flash-lite',  # Fast, cheap fallback
+        'gemini-2.5-flash'        # Older stable fallback (retires Oct 2026)
     ]
     
     for g_model in google_models_to_try:
@@ -53,47 +46,14 @@ def call_vision_model(prompt, image_bytes):
             model = GenerativeModel(g_model)
             image_part = Part.from_data(mime_type="image/jpeg", data=image_bytes)
             
-            # FIX: Removed the invalid 'timeout' parameter from generation_config
-            response = model.generate_content(
-                [prompt, image_part]
-            )
+            response = model.generate_content([prompt, image_part])
+            
             print(f"DEBUG: Google Vertex SUCCESS with {g_model}", flush=True)
             return clean_ai_text(response.text)
+            
         except Exception as e:
             print(f"DEBUG: Google Vertex {g_model} FAILED: {str(e)}", flush=True)
             continue
-
-    # 2. Fallback to Groq
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        # FIX: Changed to a real, existing Groq Vision model
-        groq_models_to_try = ["llama-3.2-11b-vision-preview"]
-        for groq_model in groq_models_to_try:
-            try:
-                print(f"DEBUG: Trying Groq with {groq_model}...", flush=True)
-                llm = ChatGroq(model=groq_model, temperature=0, api_key=groq_key, timeout=15)
-                response = llm.invoke([langchain_msg])
-                print(f"DEBUG: Groq SUCCESS with {groq_model}", flush=True)
-                return clean_ai_text(response.content)
-            except Exception as e:
-                print(f"DEBUG: Groq {groq_model} FAILED: {str(e)}", flush=True)
-                continue
-
-    # 3. Fallback to OpenRouter
-    openrouter_key = os.getenv("OPENROUTER_API_KEY")
-    if openrouter_key:
-        # FIX: Changed to a FREE vision model so it doesn't fail due to 0 credits
-        or_models_to_try = ["meta-llama/llama-3.2-11b-vision-instruct:free"]
-        for or_model in or_models_to_try:
-            try:
-                print(f"DEBUG: Trying OpenRouter with {or_model}...", flush=True)
-                llm = ChatOpenAI(model=or_model, api_key=openrouter_key, base_url="https://openrouter.ai/api/v1", timeout=15)
-                response = llm.invoke([langchain_msg])
-                print(f"DEBUG: OpenRouter SUCCESS with {or_model}", flush=True)
-                return clean_ai_text(response.content)
-            except Exception as e:
-                print(f"DEBUG: OpenRouter {or_model} FAILED: {str(e)}", flush=True)
-                continue
 
     return "Network error. Please contact Zubair for support."
 
