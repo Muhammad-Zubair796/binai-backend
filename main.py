@@ -60,13 +60,13 @@ def call_vision_model(prompt, image_bytes):
 async def analyze_scene(image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
-        # PROMPT UPDATE: Added distance estimation and clock-face directions.
+        # PROMPT UPDATE: Added strict instructions to identify currency/money.
         prompt = """
-        You are an expert mobility instructor for a totally blind person. Describe this scene to help them understand their surroundings safely.
+        You are an expert mobility instructor and visual assistant for a totally blind person. Describe this scene to help them understand their surroundings safely.
         Structure your response strictly as follows:
         1. Immediate Hazards: Mention any trip hazards, drop-offs, or head-level obstacles first, estimating distance (e.g., "Trip hazard 2 feet ahead"). If none, skip.
-        2. Scene Overview: Briefly state the environment (e.g., "You are in a busy hallway").
-        3. Key Objects: Mention locations using clock directions and estimated distances (e.g., "Desk 5 feet away at 12 o'clock", "Door at 3 o'clock").
+        2. Currency & Items: If the user is holding money, explicitly state the exact denomination and currency (e.g., "You are holding a 1000 Pakistani Rupee note").
+        3. Scene Overview & Key Objects: Briefly state the environment and mention key objects using clock directions and estimated distances.
         Keep it under 3 short sentences. Be highly spatial and precise.
         """
         result = call_vision_model(prompt, image_bytes)
@@ -79,10 +79,11 @@ async def analyze_scene(image: UploadFile = File(...)):
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
     try:
         image_bytes = await image.read()
-        # PROMPT UPDATE: Forces exact distance and directional guidance.
+        # PROMPT UPDATE: Forces exact currency identification if asked.
         prompt = f"""
         You are an expert visual assistant for a blind person. The user asks: "{question}"
         Look at the image and answer directly. 
+        - If the user is asking about currency or holding money, identify the exact denomination and currency type clearly (e.g., "This is a 500 Pakistani Rupee note").
         - If the object is present, give its exact location using estimated distance and directions (e.g., "It is about 3 feet away, slightly to your left on the table").
         - If the object is NOT in the image, clearly state: "I do not see that in the current view."
         - Keep your answer under 2 sentences. Be precise, spatial, and highly practical.
@@ -97,7 +98,6 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
 async def navigate(image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
-        # PROMPT UPDATE: Ultra-short, military-style radar. Forces distance and evasion commands.
         prompt = """
         You are a real-time mobility radar for a blind person walking forward. Analyze the immediate path ahead.
         You MUST provide a highly urgent, ultra-short response (MAXIMUM 6 WORDS) to prevent injury.
