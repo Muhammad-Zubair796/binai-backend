@@ -60,7 +60,6 @@ def call_vision_model(prompt, image_bytes):
 async def analyze_scene(image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
-        # PROMPT UPDATE: Added strict instructions to identify currency/money.
         prompt = """
         You are an expert mobility instructor and visual assistant for a totally blind person. Describe this scene to help them understand their surroundings safely.
         Structure your response strictly as follows:
@@ -79,14 +78,14 @@ async def analyze_scene(image: UploadFile = File(...)):
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...)):
     try:
         image_bytes = await image.read()
-        # PROMPT UPDATE: Forces exact currency identification if asked.
+        # PROMPT UPDATE: Perfectly handles the strict YES/NO search command from Android
         prompt = f"""
-        You are an expert visual assistant for a blind person. The user asks: "{question}"
-        Look at the image and answer directly. 
-        - If the user is asking about currency or holding money, identify the exact denomination and currency type clearly (e.g., "This is a 500 Pakistani Rupee note").
-        - If the object is present, give its exact location using estimated distance and directions (e.g., "It is about 3 feet away, slightly to your left on the table").
-        - If the object is NOT in the image, clearly state: "I do not see that in the current view."
-        - Keep your answer under 2 sentences. Be precise, spatial, and highly practical.
+        You are an expert visual assistant for a blind person. The user's command is: "{question}"
+        Look at the image and follow the user's command exactly. 
+        - If they are asking to find an object, and you see it, give its exact location using estimated distance and clock directions.
+        - If they are asking to find an object and it is NOT there, follow their exact failure instruction (e.g., saying "NO").
+        - If they ask about currency, identify the exact denomination.
+        Keep your answer under 2 sentences. Be precise, spatial, and highly practical.
         """
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
