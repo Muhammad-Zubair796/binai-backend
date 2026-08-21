@@ -2,5 +2,4 @@ fastapi
 uvicorn
 python-multipart
 google-cloud-aiplatform>=1.80.0
-face_recognition
 numpy
