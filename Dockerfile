@@ -1,29 +1,19 @@
-FROM python:3.10-slim
+# This image comes with Python 3.10, dlib, and face_recognition ALREADY installed.
+# It bypasses the 8GB RAM build limit entirely.
+FROM animenosekai/face_recognition:latest
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libopenblas-dev \
-    liblapack-dev \
-    libx11-dev \
-    libgtk-3-dev \
-    && rm -rf /var/lib/apt/lists/*
-
+# Set the working directory
 WORKDIR /app
 
-# 1. Install PRE-COMPILED dlib (Corrected URL to 'master' branch)
-# This avoids the 8GB RAM crash entirely.
-RUN pip install --upgrade pip && \
-    pip install https://github.com/jhelum-river/dlib-bin/raw/master/dlib-19.24.1-cp310-cp310-linux_x86_64.whl || \
-    pip install https://github.com/z-mahmud22/dlib-wheels/raw/main/dlib-19.24.1-cp310-cp310-linux_x86_64.whl
-
-# 2. Install face_recognition
-RUN pip install face_recognition
-
-# 3. Install the rest of your requirements
+# Copy your requirements (Make sure face_recognition and dlib are NOT in here)
 COPY requirements.txt .
+
+# Install the other dependencies (FastAPI, Google Cloud, etc.)
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy your code
 COPY . .
 
 # Start the app
+# We use uvicorn directly as it's already in the base image
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}"]
