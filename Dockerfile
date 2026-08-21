@@ -1,20 +1,19 @@
-# 1. Use Miniconda (The gold standard for ML deployments)
-FROM continuumio/miniconda3
+# 1. Use the updated Anaconda image
+FROM anaconda/miniconda3
 
-# 2. Install dlib and numpy using Conda
-# This downloads a PRE-BUILT binary. No compilation. No 8GB RAM crash.
+# 2. Install git (needed to download the face models) and dlib
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 RUN conda install -y -c conda-forge dlib numpy
 
-# 3. Set the working directory
 WORKDIR /app
 
-# 4. Install face_recognition and other tools via pip
-# (Since dlib is already installed by conda, pip will just skip it)
+# 3. Install the specific models that the error message asked for
+RUN pip install git+https://github.com/ageitgey/face_recognition_models
+
+# 4. Install the rest of the libraries
 RUN pip install face-recognition fastapi uvicorn python-multipart google-cloud-aiplatform
 
-# 5. Copy your code
 COPY . .
 
-# 6. Start the app
-# We use the full path to uvicorn to ensure it uses the conda environment
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
+# 5. Start the app using 'python -m uvicorn' to ensure it finds the conda path
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
