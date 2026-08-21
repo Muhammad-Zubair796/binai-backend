@@ -5,10 +5,24 @@ import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 from fastapi import FastAPI, UploadFile, File, Form
 from typing import Optional
+import face_recognition  # NEW
+import numpy as np       # NEW
+import io                # NEW
 
 print("DEBUG: SERVER STARTING - GOOGLE VERTEX AI (2026 MODELS)", flush=True)
 
 app = FastAPI(title="binAI Human Assistant Backend")
+
+# ==========================================
+# FACE RECOGNITION DATABASE
+# ==========================================
+# Paste the numbers you got from Step 1 inside the brackets below
+KNOWN_FACES = {
+    "Mother": np.array([
+        -0.12345, 0.09876, ... # PASTE THE 128 NUMBERS HERE
+    ]),
+    # You can add "Father", "Brother", etc., here later!
+}
 
 # ==========================================
 # INITIALIZE GOOGLE CLOUD VERTEX AI
@@ -33,34 +47,22 @@ def clean_ai_text(raw_text):
     return clean_text.replace('<', '').replace('>', '').strip()
 
 def call_vision_model(prompt, image_bytes):
-    google_models_to_try = [
-        'gemini-2.5-flash',
-        'gemini-2.5-pro'
-    ]
-    
+    google_models_to_try = ['gemini-2.5-flash', 'gemini-2.5-pro']
     for g_model in google_models_to_try:
         try:
-            print(f"DEBUG: Trying Google Vertex AI with {g_model}...", flush=True)
             model = GenerativeModel(g_model)
             image_part = Part.from_data(mime_type="image/jpeg", data=image_bytes)
             response = model.generate_content([prompt, image_part])
-            print(f"DEBUG: Google Vertex SUCCESS with {g_model}", flush=True)
             return clean_ai_text(response.text)
         except Exception as e:
-            print(f"DEBUG: Google Vertex {g_model} FAILED: {str(e)}", flush=True)
             continue
-
     return "Network error. Please contact Zubair for support."
 
 @app.post("/analyze-scene")
 async def analyze_scene(image: UploadFile = File(...), on_device_data: Optional[str] = Form(None)):
     try:
         image_bytes = await image.read()
-        
-        sensor_injection = ""
-        if on_device_data:
-            sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances and face details in your response instead of guessing."
-
+        sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances and face details in your response instead of guessing." if on_device_data else ""
         prompt = f"""
         You are an expert mobility instructor and visual assistant for a totally blind person. Describe this scene to help them understand their surroundings safely.
         {sensor_injection}
@@ -74,18 +76,13 @@ async def analyze_scene(image: UploadFile = File(...), on_device_data: Optional[
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
     except Exception as e:
-        print(f"DEBUG: Endpoint Error: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/ask-vision")
 async def ask_vision(image: UploadFile = File(...), question: str = Form(...), on_device_data: Optional[str] = Form(None)):
     try:
         image_bytes = await image.read()
-        
-        sensor_injection = ""
-        if on_device_data:
-            sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances."
-
+        sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances." if on_device_data else ""
         prompt = f"""
         You are an expert visual assistant for a blind person. The user's command is: "{question}"
         {sensor_injection}
@@ -98,25 +95,14 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...), o
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
     except Exception as e:
-        print(f"DEBUG: Endpoint Error: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 @app.post("/navigate")
 async def navigate(image: UploadFile = File(...), previous_context: Optional[str] = Form(None), on_device_data: Optional[str] = Form(None)):
     try:
         image_bytes = await image.read()
-        
-        memory_instruction = ""
-        if previous_context and previous_context != "Path clear.":
-            memory_instruction = f"""
-            MEMORY ALERT: 2 seconds ago, you warned the user: "{previous_context}". 
-            Compare the current image to your previous warning. If that object is getting closer/larger, it is moving toward the user! You MUST yell "STOP! [Object] approaching fast!"
-            """
-            
-        sensor_injection = ""
-        if on_device_data:
-            sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances for your evasion commands."
-
+        memory_instruction = f"""MEMORY ALERT: 2 seconds ago, you warned the user: "{previous_context}". Compare the current image to your previous warning. If that object is getting closer/larger, it is moving toward the user! You MUST yell "STOP! [Object] approaching fast!" """ if previous_context and previous_context != "Path clear." else ""
+        sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances for your evasion commands." if on_device_data else ""
         prompt = f"""
         You are a real-time mobility radar for a blind person walking forward. Analyze the immediate path ahead.
         {memory_instruction}
@@ -129,11 +115,36 @@ async def navigate(image: UploadFile = File(...), previous_context: Optional[str
         Do NOT use full sentences. Do NOT be polite. Prioritize distance (feet/steps) and directional commands (left/right).
         """
         result = call_vision_model(prompt, image_bytes)
-        
         return {"status": "success", "script": result}
     except Exception as e:
-        print(f"DEBUG: Endpoint Error: {str(e)}", flush=True)
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
+
+# ==========================================
+# NEW: FACE RECOGNITION ENDPOINT
+# ==========================================
+@app.post("/recognize-face")
+async def recognize_face(image: UploadFile = File(...)):
+    try:
+        image_bytes = await image.read()
+        img = face_recognition.load_image_file(io.BytesIO(image_bytes))
+        encodings = face_recognition.face_encodings(img)
+        
+        if not encodings:
+            return {"status": "success", "name": "Unknown"}
+            
+        face_encoding = encodings[0]
+        
+        # Compare against known family members
+        for name, known_encoding in KNOWN_FACES.items():
+            # 0.5 is the strictness tolerance. Lower = more strict. 0.5 is good for family.
+            match = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.5)[0]
+            if match:
+                return {"status": "success", "name": name}
+                
+        return {"status": "success", "name": "Unknown"}
+    except Exception as e:
+        print(f"DEBUG: Face Recognition Error: {str(e)}", flush=True)
+        return {"status": "error", "name": "Unknown"}
 
 if __name__ == "__main__":
     import uvicorn
