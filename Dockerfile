@@ -1,34 +1,28 @@
-# 1. Use Python 3.10 (The most stable version for face-recognition)
+cat << 'EOF' > Dockerfile
 FROM python:3.10-slim
 
-# 2. Install system dependencies and git
+# Install C++ compiler and CMake for dlib
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
     libopenblas-dev \
     liblapack-dev \
     libx11-dev \
     libgtk-3-dev \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 3. Install dlib from a PRE-COMPILED wheel (No 8GB crash)
-RUN pip install --upgrade pip && \
-    pip install https://github.com/jhelum-river/dlib-bin/raw/master/dlib-19.24.1-cp310-cp310-linux_x86_64.whl
+# Install dlib and face_recognition
+RUN pip install --no-cache-dir dlib face_recognition
 
-# 4. Install face-recognition-models FIRST
-RUN pip install face-recognition-models
-
-# 5. Install face-recognition
-RUN pip install face-recognition
-
-# 6. Install your other requirements
+# Install the rest of the requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 7. Copy your code
+# Copy your code
 COPY . .
 
-# 8. Start the app
-# We use uvicorn directly
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
+# Cloud Run expects apps to listen on port 8080 by default
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+EOF
