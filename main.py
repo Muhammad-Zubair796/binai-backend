@@ -135,7 +135,7 @@ async def navigate(image: UploadFile = File(...), previous_context: Optional[str
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 # ==========================================
-# NEW: FACE RECOGNITION ENDPOINT (FIXED)
+# NEW: FACE RECOGNITION ENDPOINT (BEST MATCH FIX)
 # ==========================================
 @app.post("/recognize-face")
 async def recognize_face(image: UploadFile = File(...)):
@@ -143,18 +143,16 @@ async def recognize_face(image: UploadFile = File(...)):
         image_bytes = await image.read()
         img = face_recognition.load_image_file(io.BytesIO(image_bytes))
         
-        # 1. Look for faces (Standard CPU-friendly search)
+        # 1. Look for faces
         face_locations = face_recognition.face_locations(img)
         
         # 2. THE ROTATION FIX: If no face is found, the Android image is likely sideways!
         if not face_locations:
-            # Try rotating 90 degrees clockwise
             img_rotated = np.rot90(img, k=-1)
             face_locations = face_recognition.face_locations(img_rotated)
             if face_locations:
                 img = img_rotated
             else:
-                # Try rotating 90 degrees counter-clockwise
                 img_rotated = np.rot90(img, k=1)
                 face_locations = face_recognition.face_locations(img_rotated)
                 if face_locations:
@@ -172,15 +170,23 @@ async def recognize_face(image: UploadFile = File(...)):
             
         face_encoding = encodings[0]
         
-        # 5. Compare against known family members
-        for name, known_encoding in KNOWN_FACES.items():
-            # Tolerance 0.55 is strict enough to prevent false positives, but loose enough to catch family
-            match = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.55)[0]
-            if match:
-                print(f"DEBUG: Recognized {name}!", flush=True)
-                return {"status": "success", "name": name}
-                
-        print("DEBUG: Face found, but did not match family database.", flush=True)
+        # 5. THE FIX: Find the BEST match, not just the FIRST match
+        known_names = list(KNOWN_FACES.keys())
+        known_encs = list(KNOWN_FACES.values())
+        
+        # Calculate the mathematical distance to EVERY family member
+        face_distances = face_recognition.face_distance(known_encs, face_encoding)
+        
+        # Find the index of the absolute closest match
+        best_match_index = np.argmin(face_distances)
+        
+        # If the absolute best match is a 50% match or better, return their name!
+        if face_distances[best_match_index] <= 0.50:
+            best_name = known_names[best_match_index]
+            print(f"DEBUG: Recognized {best_name}! Distance: {face_distances[best_match_index]}", flush=True)
+            return {"status": "success", "name": best_name}
+            
+        print(f"DEBUG: Closest was {known_names[best_match_index]} but distance was too high.", flush=True)
         return {"status": "success", "name": "Unknown"}
         
     except Exception as e:
