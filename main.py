@@ -135,7 +135,7 @@ async def navigate(image: UploadFile = File(...), previous_context: Optional[str
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 # ==========================================
-# NEW: FACE RECOGNITION ENDPOINT (BEST MATCH FIX)
+# NEW: FACE RECOGNITION ENDPOINT (WITH ADVANCED LOGGING)
 # ==========================================
 @app.post("/recognize-face")
 async def recognize_face(image: UploadFile = File(...)):
@@ -146,48 +146,58 @@ async def recognize_face(image: UploadFile = File(...)):
         # 1. Look for faces
         face_locations = face_recognition.face_locations(img)
         
-        # 2. THE ROTATION FIX: If no face is found, the Android image is likely sideways!
+        # 2. THE ROTATION FIX (With C++ Memory Fix)
         if not face_locations:
-            img_rotated = np.rot90(img, k=-1)
+            img_rotated = np.ascontiguousarray(np.rot90(img, k=-1))
             face_locations = face_recognition.face_locations(img_rotated)
             if face_locations:
+                print("DEBUG: Face found after rotating image -90 degrees.", flush=True)
                 img = img_rotated
             else:
-                img_rotated = np.rot90(img, k=1)
+                img_rotated = np.ascontiguousarray(np.rot90(img, k=1))
                 face_locations = face_recognition.face_locations(img_rotated)
                 if face_locations:
+                    print("DEBUG: Face found after rotating image +90 degrees.", flush=True)
                     img = img_rotated
 
         # 3. If STILL no face is found after rotating, return Unknown
         if not face_locations:
-            print("DEBUG: No face detected in image.", flush=True)
+            print("DEBUG: No face detected in the image at all.", flush=True)
             return {"status": "success", "name": "Unknown"}
             
         # 4. Get the facial data for the found face
         encodings = face_recognition.face_encodings(img, known_face_locations=face_locations)
         if not encodings:
+            print("DEBUG: Face detected, but could not extract facial features.", flush=True)
             return {"status": "success", "name": "Unknown"}
             
         face_encoding = encodings[0]
         
-        # 5. THE FIX: Find the BEST match, not just the FIRST match
+        # 5. Calculate distances to EVERY family member
         known_names = list(KNOWN_FACES.keys())
         known_encs = list(KNOWN_FACES.values())
-        
-        # Calculate the mathematical distance to EVERY family member
         face_distances = face_recognition.face_distance(known_encs, face_encoding)
         
-        # Find the index of the absolute closest match
-        best_match_index = np.argmin(face_distances)
+        # --- ADVANCED LOGGING ---
+        # Pair up the names with their distances and sort them (lowest distance = best match)
+        name_distance_pairs = list(zip(known_names, face_distances))
+        name_distance_pairs.sort(key=lambda x: x[1])
         
-        # If the absolute best match is a 50% match or better, return their name!
-        if face_distances[best_match_index] <= 0.50:
-            best_name = known_names[best_match_index]
-            print(f"DEBUG: Recognized {best_name}! Distance: {face_distances[best_match_index]}", flush=True)
+        print("DEBUG: --- FACE RECOGNITION RESULTS ---", flush=True)
+        print("DEBUG: Top 3 closest matches:", flush=True)
+        for i in range(min(3, len(name_distance_pairs))):
+            print(f"DEBUG: {i+1}. {name_distance_pairs[i][0]} (Distance: {name_distance_pairs[i][1]:.4f})", flush=True)
+        
+        # 6. Make the final decision based on the 0.50 threshold
+        best_name = name_distance_pairs[0][0]
+        best_distance = name_distance_pairs[0][1]
+        
+        if best_distance <= 0.50:
+            print(f"DEBUG: SUCCESS! Recognized as '{best_name}' (Distance {best_distance:.4f} is <= 0.50 threshold)", flush=True)
             return {"status": "success", "name": best_name}
-            
-        print(f"DEBUG: Closest was {known_names[best_match_index]} but distance was too high.", flush=True)
-        return {"status": "success", "name": "Unknown"}
+        else:
+            print(f"DEBUG: FAILED. Closest was '{best_name}' but distance {best_distance:.4f} is > 0.50 threshold. Returning 'Unknown'.", flush=True)
+            return {"status": "success", "name": "Unknown"}
         
     except Exception as e:
         print(f"DEBUG: Face Recognition Error: {str(e)}", flush=True)
