@@ -5,9 +5,9 @@ import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 from fastapi import FastAPI, UploadFile, File, Form
 from typing import Optional
-import face_recognition  # NEW
-import numpy as np       # NEW
-import io                # NEW
+import face_recognition  
+import numpy as np       
+import io                
 
 print("DEBUG: SERVER STARTING - GOOGLE VERTEX AI (2026 MODELS)", flush=True)
 
@@ -135,28 +135,54 @@ async def navigate(image: UploadFile = File(...), previous_context: Optional[str
         return {"status": "error", "message": "Connection lost. Please contact Zubair for support."}
 
 # ==========================================
-# NEW: FACE RECOGNITION ENDPOINT
+# NEW: FACE RECOGNITION ENDPOINT (FIXED)
 # ==========================================
 @app.post("/recognize-face")
 async def recognize_face(image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
         img = face_recognition.load_image_file(io.BytesIO(image_bytes))
-        encodings = face_recognition.face_encodings(img)
         
+        # 1. Look for faces (Standard CPU-friendly search)
+        face_locations = face_recognition.face_locations(img)
+        
+        # 2. THE ROTATION FIX: If no face is found, the Android image is likely sideways!
+        if not face_locations:
+            # Try rotating 90 degrees clockwise
+            img_rotated = np.rot90(img, k=-1)
+            face_locations = face_recognition.face_locations(img_rotated)
+            if face_locations:
+                img = img_rotated
+            else:
+                # Try rotating 90 degrees counter-clockwise
+                img_rotated = np.rot90(img, k=1)
+                face_locations = face_recognition.face_locations(img_rotated)
+                if face_locations:
+                    img = img_rotated
+
+        # 3. If STILL no face is found after rotating, return Unknown
+        if not face_locations:
+            print("DEBUG: No face detected in image.", flush=True)
+            return {"status": "success", "name": "Unknown"}
+            
+        # 4. Get the facial data for the found face
+        encodings = face_recognition.face_encodings(img, known_face_locations=face_locations)
         if not encodings:
             return {"status": "success", "name": "Unknown"}
             
         face_encoding = encodings[0]
         
-        # Compare against known family members
+        # 5. Compare against known family members
         for name, known_encoding in KNOWN_FACES.items():
-            # 0.5 is the strictness tolerance. Lower = more strict. 0.5 is good for family.
-            match = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.6)[0]
+            # Tolerance 0.55 is strict enough to prevent false positives, but loose enough to catch family
+            match = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.55)[0]
             if match:
+                print(f"DEBUG: Recognized {name}!", flush=True)
                 return {"status": "success", "name": name}
                 
+        print("DEBUG: Face found, but did not match family database.", flush=True)
         return {"status": "success", "name": "Unknown"}
+        
     except Exception as e:
         print(f"DEBUG: Face Recognition Error: {str(e)}", flush=True)
         return {"status": "error", "message": "Face recognition failed", "name": "Unknown"}
