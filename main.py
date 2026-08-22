@@ -78,16 +78,23 @@ async def analyze_scene(image: UploadFile = File(...), on_device_data: Optional[
     try:
         image_bytes = await image.read()
         sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances and face details in your response instead of guessing." if on_device_data else ""
+        
         prompt = f"""
         You are an expert mobility instructor and visual assistant for a totally blind person. Describe this scene to help them understand their surroundings safely.
         {sensor_injection}
-        Structure your response strictly as follows:
-        1. Immediate Hazards: Mention any trip hazards, drop-offs, or head-level obstacles first, using the exact sensor distance. If none, skip.
-        2. People & Faces: If the sensor data mentions faces (e.g., smiling, eyes open), describe them warmly.
-        3. Currency & Items: If the user is holding money, explicitly state the exact denomination and currency.
-        4. Scene Overview: Briefly state the environment and mention key objects using clock directions.
-        Keep it under 3 short sentences. Be highly spatial and precise.
+        
+        Prioritize your description in this exact order:
+        - HAZARDS: Mention trip hazards, drop-offs, or head-level obstacles first, using exact sensor distances.
+        - PEOPLE: If sensor data mentions faces, describe them warmly.
+        - ITEMS/CURRENCY: If the user is holding money or an object, state the exact denomination/item.
+        - OVERVIEW: Briefly state the environment and key objects using clock directions (e.g., "door at 2 o'clock").
+        
+        CRITICAL RULES:
+        - Do NOT use numbered lists or bullet points. Write a fluid, natural paragraph.
+        - If a category (like hazards or people) is not present, do not mention it at all.
+        - Keep the entire response under 3 short sentences. Be highly spatial and precise.
         """
+        
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
     except Exception as e:
@@ -98,15 +105,22 @@ async def ask_vision(image: UploadFile = File(...), question: str = Form(...), o
     try:
         image_bytes = await image.read()
         sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances." if on_device_data else ""
+        
         prompt = f"""
         You are an expert visual assistant for a blind person. The user's command is: "{question}"
         {sensor_injection}
+        
         Look at the image and follow the user's command exactly. 
-        - If they are asking to find an object, and you see it, give its exact location using the sensor distance and clock directions.
-        - If they are asking to find an object and it is NOT there, follow their exact failure instruction (e.g., saying "NO").
+        - If they ask to find an object and you see it, give its exact location using the sensor distance and clock directions.
+        - If they ask to find an object and it is NOT there, follow their exact failure instruction (e.g., saying "NO") or say "Not visible."
         - If they ask about currency, identify the exact denomination.
-        Keep your answer under 2 sentences. Be precise, spatial, and highly practical.
+        
+        CRITICAL RULES:
+        - If you are unsure or the image is too blurry, DO NOT GUESS. Say "I cannot see that clearly."
+        - Keep your answer under 2 sentences. 
+        - Be precise, spatial, and highly practical.
         """
+        
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
     except Exception as e:
@@ -118,17 +132,26 @@ async def navigate(image: UploadFile = File(...), previous_context: Optional[str
         image_bytes = await image.read()
         memory_instruction = f"""MEMORY ALERT: 2 seconds ago, you warned the user: "{previous_context}". Compare the current image to your previous warning. If that object is getting closer/larger, it is moving toward the user! You MUST yell "STOP! [Object] approaching fast!" """ if previous_context and previous_context != "Path clear." else ""
         sensor_injection = f"ON-DEVICE SENSOR DATA: {on_device_data}. Use these exact distances for your evasion commands." if on_device_data else ""
+        
         prompt = f"""
         You are a real-time mobility radar for a blind person walking forward. Analyze the immediate path ahead.
         {memory_instruction}
         {sensor_injection}
+        
         You MUST provide a highly urgent, ultra-short response (MAXIMUM 8 WORDS) to prevent injury.
+        
         Rules:
         1. CRITICAL DANGER (Stairs, drop-offs, moving cars): Start with "STOP!" followed by the danger (e.g., "STOP! Stairs going down", "STOP! Car approaching").
         2. BLOCKED PATH: State the object, exact sensor distance, and an evasion command (e.g., "Wall 3 feet, move right", "Person 2 feet, shift left").
         3. CLEAR PATH: If the immediate walking path is completely clear for at least 10 feet, reply exactly: "Path clear."
-        Do NOT use full sentences. Do NOT be polite. Prioritize distance (feet/steps) and directional commands (left/right).
+        
+        CRITICAL CONSTRAINTS:
+        - Do NOT use full sentences. 
+        - Do NOT be polite. 
+        - Prioritize distance (feet/steps) and directional commands (left/right).
+        - Write for a text-to-speech engine: use simple words and avoid unnecessary punctuation.
         """
+        
         result = call_vision_model(prompt, image_bytes)
         return {"status": "success", "script": result}
     except Exception as e:
