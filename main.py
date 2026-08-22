@@ -152,14 +152,14 @@ async def recognize_face(image: UploadFile = File(...)):
         # Compare against known family members
         for name, known_encoding in KNOWN_FACES.items():
             # 0.5 is the strictness tolerance. Lower = more strict. 0.5 is good for family.
-            match = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.5)[0]
+            match = face_recognition.compare_faces([known_encoding], face_encoding, tolerance=0.6)[0]
             if match:
                 return {"status": "success", "name": name}
                 
         return {"status": "success", "name": "Unknown"}
     except Exception as e:
         print(f"DEBUG: Face Recognition Error: {str(e)}", flush=True)
-        return {"status": "error", "name": "Unknown"}
+        return {"status": "error", "message": "Face recognition failed", "name": "Unknown"}
 
 if __name__ == "__main__":
     import uvicorn
